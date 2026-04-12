@@ -1,13 +1,4 @@
-geofence:
-  name: home_area
-  frame_id: map
-  points:
-    - {x: 0.0, y: 0.0}
-    - {x: 10.0, y: 0.0}
-    - {x: 10.0, y: 10.0}
-    - {x: 0.0, y: 10.0}
-    
-geofence_manager:
+  geofence_manager:
   ros__parameters:
     geofence_file: ""
     pose_topic: "/robot_pose"

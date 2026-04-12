@@ -6,7 +6,7 @@ import os
 
 def generate_launch_description():
     pkg_share = get_package_share_directory("geofence_manager")
-    geofence_file = os.path.join(pkg_share, "config", "geofence.yaml")
+    geofence_file = os.path.join(pkg_share, "config", "geofence_polygon.yaml")
 
     return LaunchDescription([
         Node(
