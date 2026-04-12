@@ -13,7 +13,7 @@ setup(
         ('share/' + package_name + '/launch', ['launch/geofence.launch.py']),
         ('share/' + package_name + '/config', ['config/geofence.yaml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'PyYAML'],
     zip_safe=True,
     maintainer='Sergei Grichine',
     maintainer_email='slg@quakemap.com',
