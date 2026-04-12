@@ -371,9 +371,27 @@ class GeofenceManagerNode(Node):
 
 def main(args: Optional[Sequence[str]] = None) -> None:
     rclpy.init(args=args)
-    node = GeofenceManagerNode()
+    node: Optional[GeofenceManagerNode] = None
+
     try:
+        node = GeofenceManagerNode()
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        if node is not None:
+            print("Ctrl+C received, shutting down geofence_manager.")
+    except Exception:
+        if node is not None:
+            node.get_logger().exception("Unhandled exception in geofence_manager.")
+        raise
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        if node is not None:
+            try:
+                node.destroy_node()
+            except Exception:
+                pass
+
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
