@@ -1,10 +1,10 @@
-  geofence_manager:
+geofence_manager:
   ros__parameters:
-    geofence_file: ""
     pose_topic: "/robot_pose"
     pose_source_type: "pose_stamped"   # pose_stamped | odometry
     world_frame: "map"
-    robot_frame: "base_link"
     near_boundary_threshold_m: 2.0
     publish_markers: true
-    publish_rate_hz: 5.0
+    publish_polygon: true
+    status_publish_rate_hz: 5.0
+    localization_timeout_sec: 2.0

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence, Tuple
 
-import math
-
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.time import Time
 
-from geometry_msgs.msg import Point, PolygonStamped, PoseStamped
+from geometry_msgs.msg import Point, Point32, PolygonStamped, PoseStamped
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool
 from visualization_msgs.msg import Marker, MarkerArray
@@ -27,6 +26,7 @@ from geofence_manager.polygon_loader import load_geofence_from_yaml
 
 
 XY = Tuple[float, float]
+INVALID_DISTANCE_M = -1.0
 
 
 class GeofenceManagerNode(Node):
@@ -44,7 +44,7 @@ class GeofenceManagerNode(Node):
 
         self.declare_parameter("geofence_file", "")
         self.declare_parameter("pose_topic", "/robot_pose")
-        self.declare_parameter("pose_source_type", "pose_stamped")  # pose_stamped | odometry
+        self.declare_parameter("pose_source_type", "pose_stamped")
         self.declare_parameter("world_frame", "map")
         self.declare_parameter("near_boundary_threshold_m", 2.0)
         self.declare_parameter("publish_markers", True)
@@ -71,6 +71,10 @@ class GeofenceManagerNode(Node):
         self._last_pose_stamp = None
         self._last_pose_frame_id: str = ""
 
+        self._last_frame_mismatch_warn_key: Optional[str] = None
+        self._last_localization_valid: Optional[bool] = None
+        self._last_status_state: Optional[str] = None
+
         self._load_polygon_or_fail()
 
         self._status_pub = self.create_publisher(GeofenceStatus, "/geofence/status", 10)
@@ -84,7 +88,7 @@ class GeofenceManagerNode(Node):
         self._polygon_pub = self.create_publisher(PolygonStamped, "/geofence/polygon", polygon_qos)
         self._marker_pub = self.create_publisher(MarkerArray, "/geofence/markers", polygon_qos)
 
-        self._is_pose_allowed_srv = self.create_service(
+        self.create_service(
             IsPoseAllowed,
             "/geofence/is_pose_allowed",
             self._handle_is_pose_allowed,
@@ -169,53 +173,66 @@ class GeofenceManagerNode(Node):
 
     def _publish_status_timer_callback(self) -> None:
         status = self._build_status_from_latest_pose()
-        if status is None:
-            return
-
         self._status_pub.publish(status)
 
         inside_msg = Bool()
         inside_msg.data = status.is_inside
         self._inside_pub.publish(inside_msg)
 
-    def _build_status_from_latest_pose(self) -> Optional[GeofenceStatus]:
+        if status.state != self._last_status_state:
+            self.get_logger().info(
+                f"Geofence state changed to {status.state}"
+                f"{' (zone=' + self._zone_name + ')' if self._zone_name else ''}"
+            )
+            self._last_status_state = status.state
+
+    def _build_status_from_latest_pose(self) -> GeofenceStatus:
         msg = GeofenceStatus()
-        now = self.get_clock().now().to_msg()
-        msg.header.stamp = now
+        msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self._polygon_frame_id
         msg.zone_name = self._zone_name
+        msg.closest_boundary_point = Point()
+        msg.distance_to_boundary_m = INVALID_DISTANCE_M
 
         if self._last_pose_x is None or self._last_pose_y is None or self._last_pose_stamp is None:
             msg.is_inside = False
             msg.is_near_boundary = False
             msg.localization_valid = False
-            msg.distance_to_boundary_m = math.inf
-            msg.closest_boundary_point = Point()
             msg.state = "UNKNOWN"
             return msg
 
         if self._last_pose_frame_id and self._last_pose_frame_id != self._polygon_frame_id:
-            self.get_logger().warn(
-                f"Pose frame '{self._last_pose_frame_id}' does not match geofence frame "
-                f"'{self._polygon_frame_id}'. Publishing UNKNOWN state."
-            )
+            warn_key = f"{self._last_pose_frame_id}->{self._polygon_frame_id}"
+            if warn_key != self._last_frame_mismatch_warn_key:
+                self.get_logger().warn(
+                    f"Pose frame '{self._last_pose_frame_id}' does not match geofence frame "
+                    f"'{self._polygon_frame_id}'. Publishing UNKNOWN state."
+                )
+                self._last_frame_mismatch_warn_key = warn_key
+
             msg.is_inside = False
             msg.is_near_boundary = False
             msg.localization_valid = False
-            msg.distance_to_boundary_m = math.inf
-            msg.closest_boundary_point = Point()
             msg.state = "UNKNOWN"
             return msg
 
+        self._last_frame_mismatch_warn_key = None
+
         pose_age_sec = self._seconds_since_stamp(self._last_pose_stamp)
         localization_valid = pose_age_sec <= self._localization_timeout_sec
+
+        if localization_valid != self._last_localization_valid:
+            if not localization_valid:
+                self.get_logger().warn(
+                    f"Localization stale: latest pose age is {pose_age_sec:.2f} s "
+                    f"(timeout {self._localization_timeout_sec:.2f} s)."
+                )
+            self._last_localization_valid = localization_valid
 
         if not localization_valid:
             msg.is_inside = False
             msg.is_near_boundary = False
             msg.localization_valid = False
-            msg.distance_to_boundary_m = math.inf
-            msg.closest_boundary_point = Point()
             msg.state = "UNKNOWN"
             return msg
 
@@ -231,11 +248,9 @@ class GeofenceManagerNode(Node):
         msg.localization_valid = True
         msg.distance_to_boundary_m = float(distance_m)
 
-        closest_point = Point()
-        closest_point.x = float(closest_x)
-        closest_point.y = float(closest_y)
-        closest_point.z = 0.0
-        msg.closest_boundary_point = closest_point
+        msg.closest_boundary_point.x = float(closest_x)
+        msg.closest_boundary_point.y = float(closest_y)
+        msg.closest_boundary_point.z = 0.0
 
         if inside:
             msg.state = "NEAR_BOUNDARY" if msg.is_near_boundary else "INSIDE"
@@ -244,13 +259,17 @@ class GeofenceManagerNode(Node):
 
         return msg
 
-    def _handle_is_pose_allowed(self, request: IsPoseAllowed.Request, response: IsPoseAllowed.Response):
+    def _handle_is_pose_allowed(
+        self,
+        request: IsPoseAllowed.Request,
+        response: IsPoseAllowed.Response,
+    ) -> IsPoseAllowed.Response:
         pose = request.pose
 
         request_frame = pose.header.frame_id.strip()
         if request_frame and request_frame != self._polygon_frame_id:
             response.allowed = False
-            response.distance_to_boundary_m = -1.0
+            response.distance_to_boundary_m = INVALID_DISTANCE_M
             response.reason = (
                 f"pose frame '{request_frame}' does not match geofence frame "
                 f"'{self._polygon_frame_id}'"
@@ -274,7 +293,7 @@ class GeofenceManagerNode(Node):
         msg.header.frame_id = self._polygon_frame_id
 
         for x, y in self._closed_polygon_xy():
-            pt = Point()
+            pt = Point32()
             pt.x = float(x)
             pt.y = float(y)
             pt.z = 0.0
@@ -284,9 +303,10 @@ class GeofenceManagerNode(Node):
 
     def _publish_marker_msg(self) -> None:
         marker_array = MarkerArray()
+        stamp = self.get_clock().now().to_msg()
 
         line_marker = Marker()
-        line_marker.header.stamp = self.get_clock().now().to_msg()
+        line_marker.header.stamp = stamp
         line_marker.header.frame_id = self._polygon_frame_id
         line_marker.ns = "geofence_boundary"
         line_marker.id = 0
@@ -309,7 +329,7 @@ class GeofenceManagerNode(Node):
         marker_array.markers.append(line_marker)
 
         vertex_marker = Marker()
-        vertex_marker.header.stamp = line_marker.header.stamp
+        vertex_marker.header.stamp = stamp
         vertex_marker.header.frame_id = self._polygon_frame_id
         vertex_marker.ns = "geofence_vertices"
         vertex_marker.id = 1
@@ -332,7 +352,6 @@ class GeofenceManagerNode(Node):
             vertex_marker.points.append(pt)
 
         marker_array.markers.append(vertex_marker)
-
         self._marker_pub.publish(marker_array)
 
     def _closed_polygon_xy(self) -> Sequence[XY]:
@@ -346,7 +365,7 @@ class GeofenceManagerNode(Node):
 
     def _seconds_since_stamp(self, stamp) -> float:
         now = self.get_clock().now()
-        then = rclpy.time.Time.from_msg(stamp)
+        then = Time.from_msg(stamp)
         return max(0.0, (now - then).nanoseconds / 1e9)
 
 
