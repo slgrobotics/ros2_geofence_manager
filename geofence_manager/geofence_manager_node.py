@@ -172,6 +172,10 @@ class GeofenceManagerNode(Node):
         self._last_pose_frame_id = frame_id.strip()
 
     def _publish_status_timer_callback(self) -> None:
+
+        if not rclpy.ok():
+            return
+
         status = self._build_status_from_latest_pose()
         self._status_pub.publish(status)
 
@@ -367,6 +371,12 @@ class GeofenceManagerNode(Node):
         now = self.get_clock().now()
         then = Time.from_msg(stamp)
         return max(0.0, (now - then).nanoseconds / 1e9)
+
+
+    def destroy_node(self) -> bool:
+        self._status_timer.cancel()
+        print("Destroying geofence_manager node.")
+        return super().destroy_node()
 
 
 def main(args: Optional[Sequence[str]] = None) -> None:
