@@ -1,9 +1,11 @@
 geofence_manager:
   ros__parameters:
-    pose_topic: "/robot_pose"
-    pose_source_type: "pose_stamped"   # pose_stamped | odometry
+    pose_topic: "/odometry/global"
+    pose_source_type: "odometry"       # pose_stamped | odometry
+    #pose_topic: "/robot_pose"
+    #pose_source_type: "pose_stamped"   # pose_stamped | odometry
     world_frame: "map"
-    near_boundary_threshold_m: 2.0
+    near_boundary_threshold_m: 1.0
     publish_polygon: true
     publish_markers: true
     markers_offset_z: 0.3  # Height of the marker above the ground in RViz, in meters.
