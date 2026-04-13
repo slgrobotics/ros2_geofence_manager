@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import random
 import signal
 import sys
 from pathlib import Path
@@ -61,6 +62,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.0,
         help="Bounce angle in degrees. 0 = orthogonal inward.",
+    )
+    parser.add_argument(
+        "--angle-jitter",
+        type=float,
+        default=10.0,
+        help="Random variation added to bounce angle (deg)",
     )
     parser.add_argument(
         "--start-inset",
@@ -206,6 +213,10 @@ def dist(a: XY, b: XY) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
+def clamp(value: float, min_val: float, max_val: float) -> float:
+    return max(min_val, min(max_val, value))
+
+
 def main() -> int:
     global _RUNNING
 
@@ -226,6 +237,7 @@ def main() -> int:
     trail: List[XY] = [robot_xy]
 
     bounce_angle_deg = args.angle_deg
+    bounce_angle_sign = 1.0
 
     bounce = compute_bounce_target(
         robot_xy=robot_xy,
@@ -261,8 +273,11 @@ def main() -> int:
                 print(f"Bounce target failed: {bounce.reason}", file=sys.stderr)
                 break
             target_xy = bounce.target_point
-            # Invert bounce angle for next run to demonstrate both sides of the bounce logic.
-            bounce_angle_deg = -bounce_angle_deg
+
+            # Invert bounce angle for next run to bounce to both sides, add random jitter.
+            bounce_angle_sign = -bounce_angle_sign
+            bounce_angle_deg = args.angle_deg * bounce_angle_sign + random.uniform(-args.angle_jitter, args.angle_jitter)
+            bounce_angle_deg = clamp(bounce_angle_deg, -60.0, 60.0)
 
         direction = normalize((target_xy[0] - robot_xy[0], target_xy[1] - robot_xy[1]))
         robot_xy = (
