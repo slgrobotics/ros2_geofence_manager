@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 import math
 
+from geofence_manager.geometry_utils import point_in_polygon
+
 # ---------------------------------------------------------------------------------------------
 #
 # See https://chatgpt.com/s/t_69dc4159a75081919fbffd222699726c
@@ -173,20 +175,25 @@ def compute_bounce_target(
     bounce_angle_deg: float = 0.0,
     start_inset_m: float = 0.25,
     goal_inset_m: float = 0.50,
+    center_bias: float = 0.1,
 ) -> BounceTargetResult:
     """
-    Compute a target on the far side of the polygon by projecting inward from the nearest boundary.
+    Compute an interior bounce target.
 
-    bounce_angle_deg:
-      0   -> straight inward (orthogonal to boundary)
-      >0  -> rotate toward +tangent
-      <0  -> rotate toward -tangent
+    Behavior:
+    - If robot_xy is inside the polygon:
+        use bounce_angle_deg normally
+        and target the far interior point (effective center_bias = 1.0)
+    - If robot_xy is outside the polygon:
+        ignore bounce_angle_deg for this step
+        use orthogonal inward recovery
+        and target an interior-biased point using center_bias
 
-    start_inset_m:
-      distance to move inward from the nearest boundary before ray casting
-
-    goal_inset_m:
-      distance to back off from the far-side intersection
+    center_bias:
+      Used only for outside-start recovery.
+      0.0 -> stay near the inward start side
+      0.5 -> target the middle of the interior ray segment
+      1.0 -> target near the far boundary
     """
     if len(polygon) < 3:
         return BounceTargetResult(
@@ -210,18 +217,38 @@ def compute_bounce_target(
             reason="inset distances must be non-negative",
         )
 
+    center_bias = max(0.0, min(1.0, center_bias))
+
     hit = compute_nearest_boundary_hit(robot_xy, polygon)
 
-    theta = math.radians(bounce_angle_deg)
+    inside = point_in_polygon(robot_xy[0], robot_xy[1], polygon)
+
+    # Outside starts use orthogonal inward recovery first.
+    effective_bounce_angle_deg = bounce_angle_deg if inside else 0.0
+    effective_center_bias = 1.0 if inside else center_bias
+
+    theta = math.radians(effective_bounce_angle_deg)
 
     nx, ny = hit.inward_normal_unit
     tx, ty = hit.tangent_unit
 
-    # D = cos(theta) * N + sin(theta) * T
     dir_x = math.cos(theta) * nx + math.sin(theta) * tx
     dir_y = math.cos(theta) * ny + math.sin(theta) * ty
-    direction = normalize((dir_x, dir_y))
 
+    try:
+        direction = normalize((dir_x, dir_y))
+    except ValueError:
+        return BounceTargetResult(
+            success=False,
+            target_point=robot_xy,
+            boundary_point=hit.closest_point,
+            far_boundary_point=hit.closest_point,
+            travel_direction_unit=(0.0, 0.0),
+            segment_index=hit.segment_index,
+            reason="failed to construct travel direction",
+        )
+
+    # Always start slightly inside from the nearest boundary point.
     start_point = (
         hit.closest_point[0] + start_inset_m * nx,
         hit.closest_point[1] + start_inset_m * ny,
@@ -229,8 +256,11 @@ def compute_bounce_target(
 
     intersections = ray_polygon_intersections(start_point, direction, polygon)
 
-    # Ignore intersections too close to the ray origin.
-    forward_hits = [(s, pt, seg_idx) for s, pt, seg_idx in intersections if s > max(start_inset_m, 1e-6)]
+    forward_hits = [
+        (s, pt, seg_idx)
+        for s, pt, seg_idx in intersections
+        if s > max(goal_inset_m, 1e-6)
+    ]
 
     if not forward_hits:
         return BounceTargetResult(
@@ -243,12 +273,19 @@ def compute_bounce_target(
             reason="ray does not intersect polygon boundary ahead",
         )
 
-    # Choose the farthest forward hit, which should be the opposite-side exit for convex polygons.
     s_far, far_pt, _ = max(forward_hits, key=lambda item: item[0])
 
-    target_point = (
+    # Safe interior point near the far side.
+    far_interior_point = (
         far_pt[0] - goal_inset_m * direction[0],
         far_pt[1] - goal_inset_m * direction[1],
+    )
+
+    # Outside recovery may target somewhere inside the chord.
+    # Inside bounce targets the full far interior point.
+    target_point = (
+        start_point[0] + effective_center_bias * (far_interior_point[0] - start_point[0]),
+        start_point[1] + effective_center_bias * (far_interior_point[1] - start_point[1]),
     )
 
     return BounceTargetResult(
@@ -258,7 +295,7 @@ def compute_bounce_target(
         far_boundary_point=far_pt,
         travel_direction_unit=direction,
         segment_index=hit.segment_index,
-        reason="ok",
+        reason="ok" if inside else "ok (outside start recovered inward)",
     )
 
 

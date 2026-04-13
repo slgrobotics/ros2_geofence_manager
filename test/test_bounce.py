@@ -233,6 +233,7 @@ def main() -> int:
         bounce_angle_deg=bounce_angle_deg,
         start_inset_m=args.start_inset,
         goal_inset_m=args.goal_inset,
+        center_bias=0.1,
     )
     if not bounce.success:
         print(f"Initial bounce target failed: {bounce.reason}", file=sys.stderr)
@@ -254,6 +255,7 @@ def main() -> int:
                 bounce_angle_deg=bounce_angle_deg,
                 start_inset_m=args.start_inset,
                 goal_inset_m=args.goal_inset,
+                center_bias=0.1,
             )
             if not bounce.success:
                 print(f"Bounce target failed: {bounce.reason}", file=sys.stderr)
@@ -278,6 +280,7 @@ def main() -> int:
             bounce_angle_deg=bounce_angle_deg,
             start_inset_m=args.start_inset,
             goal_inset_m=args.goal_inset,
+            center_bias=0.1,
         )
 
         frame = np.zeros((args.height, args.width, 3), dtype=np.uint8)
