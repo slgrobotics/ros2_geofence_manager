@@ -12,9 +12,6 @@ from typing import List, Sequence, Tuple
 import cv2
 import numpy as np
 
-import sys
-from pathlib import Path
-
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from geofence_manager.polygon_loader import load_geofence_from_yaml
@@ -25,7 +22,7 @@ from geofence_manager.geometry_bounce import (
 
 #
 # cd ~/robot_ws/src/ros2_geofence_manager/test
-# ./test_bounce.py --yaml ../config/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 10
+# ./test_bounce.py --yaml ../config/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30
 #
 
 XY = Tuple[float, float]
@@ -228,7 +225,7 @@ def main() -> int:
     robot_xy: XY = (args.x, args.y)
     trail: List[XY] = [robot_xy]
 
-    bounce_angle_deg=args.angle_deg
+    bounce_angle_deg = args.angle_deg
 
     bounce = compute_bounce_target(
         robot_xy=robot_xy,

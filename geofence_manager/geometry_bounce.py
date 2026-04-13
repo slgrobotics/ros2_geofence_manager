@@ -11,7 +11,11 @@ import math
 # See https://chatgpt.com/s/t_69dc4159a75081919fbffd222699726c
 #     https://chatgpt.com/s/t_69dc424ab0288191894a96b510d8c53b
 #
-# `bounce_geometry.py` is a pure-geometry helper module for generating an interior “bounce” target when a robot approaches a geofence boundary.
+# -- Test it:
+# cd ~/robot_ws/src/ros2_geofence_manager/test
+# ./test_bounce.py --yaml ../config/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30
+#
+# `geometry_bounce.py` is a pure-geometry helper module for generating an interior “bounce” target when a robot approaches a geofence boundary.
 #
 # Its purpose is to support simple wandering, patrolling, and recovery behaviors inside a polygonal operating area without embedding navigation logic into the geofence node itself.
 #
