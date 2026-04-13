@@ -47,6 +47,8 @@ class GeofenceManagerNode(Node):
         self.declare_parameter("pose_source_type", "pose_stamped")
         self.declare_parameter("world_frame", "map")
         self.declare_parameter("near_boundary_threshold_m", 2.0)
+        self.declare_parameter("near_boundary_hysteresis_m", 0.5)
+        self.declare_parameter("outside_debounce_count", 3)
         self.declare_parameter("publish_polygon", True)
         self.declare_parameter("publish_markers", True)
         self.declare_parameter("markers_offset_z", 0.3)  # Height of the marker above the ground in RViz, in meters.
@@ -59,6 +61,8 @@ class GeofenceManagerNode(Node):
         self._pose_source_type = str(self.get_parameter("pose_source_type").value).strip().lower()
         self._world_frame = str(self.get_parameter("world_frame").value)
         self._near_boundary_threshold_m = float(self.get_parameter("near_boundary_threshold_m").value)
+        self._near_boundary_hysteresis_m = float(self.get_parameter("near_boundary_hysteresis_m").value)
+        self._outside_debounce_count = int(self.get_parameter("outside_debounce_count").value)
         self._publish_polygon = bool(self.get_parameter("publish_polygon").value)
         self._publish_markers = bool(self.get_parameter("publish_markers").value)
         self._markers_offset_z = float(self.get_parameter("markers_offset_z").value)
@@ -126,6 +130,10 @@ class GeofenceManagerNode(Node):
         
         static_timer_period = 1.0 / self._static_publish_rate_hz if self._static_publish_rate_hz > 0.0 else 1.0
         self._static_timer = self.create_timer(static_timer_period, self._publish_static_outputs_timer_callback)
+
+        self._stable_state: str = "UNKNOWN"
+        self._raw_outside_count: int = 0
+        self._raw_inside_count: int = 0
 
         self.get_logger().info(
             f"geofence_manager started | file='{self._geofence_file}' | "
@@ -203,6 +211,66 @@ class GeofenceManagerNode(Node):
         if self._publish_markers:
             self._publish_marker_msg()
 
+    def _classify_state_with_hysteresis(self, inside: bool, distance_m: float) -> str:
+        """
+        Classify geofence state using hysteresis and debounce.
+
+        States:
+        - INSIDE
+        - NEAR_BOUNDARY
+        - OUTSIDE
+        - UNKNOWN
+        """
+        prev = self._stable_state
+
+        near_enter = self._near_boundary_threshold_m
+        near_exit = self._near_boundary_threshold_m + self._near_boundary_hysteresis_m
+
+        # Debounce raw inside/outside classification.
+        if inside:
+            self._raw_inside_count += 1
+            self._raw_outside_count = 0
+        else:
+            self._raw_outside_count += 1
+            self._raw_inside_count = 0
+
+        outside_confirmed = self._raw_outside_count >= self._outside_debounce_count
+        inside_confirmed = self._raw_inside_count >= 1
+
+        # UNKNOWN bootstrap behavior
+        if prev == "UNKNOWN":
+            if outside_confirmed:
+                return "OUTSIDE"
+            if inside and distance_m <= near_enter:
+                return "NEAR_BOUNDARY"
+            if inside_confirmed:
+                return "INSIDE"
+            return "UNKNOWN"
+
+        # Once OUTSIDE, require a confirmed return inside.
+        if prev == "OUTSIDE":
+            if not inside_confirmed:
+                return "OUTSIDE"
+            return "NEAR_BOUNDARY" if distance_m <= near_exit else "INSIDE"
+
+        # INSIDE transitions
+        if prev == "INSIDE":
+            if outside_confirmed:
+                return "OUTSIDE"
+            if inside and distance_m <= near_enter:
+                return "NEAR_BOUNDARY"
+            return "INSIDE"
+
+        # NEAR_BOUNDARY transitions
+        if prev == "NEAR_BOUNDARY":
+            if outside_confirmed:
+                return "OUTSIDE"
+            if inside and distance_m >= near_exit:
+                return "INSIDE"
+            return "NEAR_BOUNDARY"
+
+        return "UNKNOWN"
+
     def _build_status_from_latest_pose(self) -> GeofenceStatus:
         msg = GeofenceStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -216,6 +284,9 @@ class GeofenceManagerNode(Node):
             msg.is_near_boundary = False
             msg.localization_valid = False
             msg.state = "UNKNOWN"
+            self._raw_inside_count = 0
+            self._raw_outside_count = 0
+            self._stable_state = "UNKNOWN"
             return msg
 
         if self._last_pose_frame_id and self._last_pose_frame_id != self._polygon_frame_id:
@@ -231,6 +302,9 @@ class GeofenceManagerNode(Node):
             msg.is_near_boundary = False
             msg.localization_valid = False
             msg.state = "UNKNOWN"
+            self._raw_inside_count = 0
+            self._raw_outside_count = 0
+            self._stable_state = "UNKNOWN"
             return msg
 
         self._last_frame_mismatch_warn_key = None
@@ -251,6 +325,9 @@ class GeofenceManagerNode(Node):
             msg.is_near_boundary = False
             msg.localization_valid = False
             msg.state = "UNKNOWN"
+            self._raw_inside_count = 0
+            self._raw_outside_count = 0
+            self._stable_state = "UNKNOWN"
             return msg
 
         x = self._last_pose_x
@@ -260,8 +337,9 @@ class GeofenceManagerNode(Node):
         distance_m = distance_to_polygon_edges(x, y, self._polygon_xy)
         closest_x, closest_y = closest_point_on_polygon(x, y, self._polygon_xy)
 
-        msg.is_inside = inside
-        msg.is_near_boundary = inside and distance_m <= self._near_boundary_threshold_m
+        state = self._classify_state_with_hysteresis(inside, distance_m)
+        self._stable_state = state
+
         msg.localization_valid = True
         msg.distance_to_boundary_m = float(distance_m)
 
@@ -269,10 +347,9 @@ class GeofenceManagerNode(Node):
         msg.closest_boundary_point.y = float(closest_y)
         msg.closest_boundary_point.z = 0.0
 
-        if inside:
-            msg.state = "NEAR_BOUNDARY" if msg.is_near_boundary else "INSIDE"
-        else:
-            msg.state = "OUTSIDE"
+        msg.state = state
+        msg.is_inside = state in ("INSIDE", "NEAR_BOUNDARY")
+        msg.is_near_boundary = state == "NEAR_BOUNDARY"
 
         return msg
 

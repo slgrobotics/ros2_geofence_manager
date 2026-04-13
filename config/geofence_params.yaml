@@ -6,6 +6,8 @@ geofence_manager:
     #pose_source_type: "pose_stamped"   # pose_stamped | odometry
     world_frame: "map"
     near_boundary_threshold_m: 1.0
+    near_boundary_hysteresis_m: 0.5
+    outside_debounce_count: 3
     publish_polygon: true
     publish_markers: true
     markers_offset_z: 0.3  # Height of the marker above the ground in RViz, in meters.
