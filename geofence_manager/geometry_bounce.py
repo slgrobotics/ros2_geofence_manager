@@ -102,8 +102,8 @@ class BounceTargetResult:
     far_boundary_point: XY
     travel_direction_unit: XY
     segment_index: int
+    used_recovery_mode: bool
     reason: str
-
 
 def compute_nearest_boundary_hit(robot_xy: XY, polygon: Sequence[XY]) -> BoundaryHit:
     """
@@ -203,6 +203,7 @@ def compute_bounce_target(
             far_boundary_point=robot_xy,
             travel_direction_unit=(0.0, 0.0),
             segment_index=-1,
+            used_recovery_mode=False,
             reason="polygon must contain at least 3 vertices",
         )
 
@@ -214,6 +215,7 @@ def compute_bounce_target(
             far_boundary_point=robot_xy,
             travel_direction_unit=(0.0, 0.0),
             segment_index=-1,
+            used_recovery_mode=False,
             reason="inset distances must be non-negative",
         )
 
@@ -245,6 +247,7 @@ def compute_bounce_target(
             far_boundary_point=hit.closest_point,
             travel_direction_unit=(0.0, 0.0),
             segment_index=hit.segment_index,
+            used_recovery_mode=not inside,
             reason="failed to construct travel direction",
         )
 
@@ -270,10 +273,11 @@ def compute_bounce_target(
             far_boundary_point=start_point,
             travel_direction_unit=direction,
             segment_index=hit.segment_index,
+            used_recovery_mode=not inside,
             reason="ray does not intersect polygon boundary ahead",
         )
 
-    s_far, far_pt, _ = max(forward_hits, key=lambda item: item[0])
+    _, far_pt, _ = max(forward_hits, key=lambda item: item[0])
 
     # Safe interior point near the far side.
     far_interior_point = (
@@ -295,6 +299,7 @@ def compute_bounce_target(
         far_boundary_point=far_pt,
         travel_direction_unit=direction,
         segment_index=hit.segment_index,
+        used_recovery_mode=not inside,
         reason="ok" if inside else "ok (outside start recovered inward)",
     )
 

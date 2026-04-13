@@ -10,6 +10,8 @@ geofence_manager:
     outside_debounce_count: 3
     publish_polygon: true
     publish_markers: true
+    publish_inward_normal_marker: true
+    inward_normal_marker_length_m: 1.0
     markers_offset_z: 0.3  # Height of the marker above the ground in RViz, in meters.
     status_publish_rate_hz: 5.0
     static_publish_rate_hz: 1.0

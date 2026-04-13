@@ -3,30 +3,39 @@
 from __future__ import annotations
 
 from typing import List, Optional, Sequence, Tuple
+from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 
-from geometry_msgs.msg import Point, Point32, PolygonStamped, PoseStamped
+from geometry_msgs.msg import Point, Point32, PolygonStamped, PoseStamped, PointStamped
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float32
 from visualization_msgs.msg import Marker, MarkerArray
 
 from geofence_manager_interfaces.msg import GeofenceStatus
 from geofence_manager_interfaces.srv import IsPoseAllowed
+from geofence_manager_interfaces.srv import ComputeBounceTarget
 
-from geofence_manager.geometry_utils import (
-    closest_point_on_polygon,
-    distance_to_polygon_edges,
-    point_in_polygon,
-)
+from geofence_manager.geometry_utils import point_in_polygon
 from geofence_manager.polygon_loader import load_geofence_from_yaml
-
+from geofence_manager.geometry_bounce import (compute_bounce_target, compute_nearest_boundary_hit,)
 
 XY = Tuple[float, float]
 INVALID_DISTANCE_M = -1.0
+
+@dataclass
+class BoundaryContext:
+    x: float
+    y: float
+    inside: bool
+    distance_m: float
+    closest_point: XY
+    segment_index: int
+    tangent_unit: XY
+    inward_normal_unit: XY
 
 
 class GeofenceManagerNode(Node):
@@ -55,6 +64,8 @@ class GeofenceManagerNode(Node):
         self.declare_parameter("status_publish_rate_hz", 5.0)
         self.declare_parameter("static_publish_rate_hz", 1.0)
         self.declare_parameter("localization_timeout_sec", 2.0)
+        self.declare_parameter("publish_inward_normal_marker", True)
+        self.declare_parameter("inward_normal_marker_length_m", 1.0)
 
         self._geofence_file = str(self.get_parameter("geofence_file").value)
         self._pose_topic = str(self.get_parameter("pose_topic").value)
@@ -69,6 +80,8 @@ class GeofenceManagerNode(Node):
         self._status_publish_rate_hz = float(self.get_parameter("status_publish_rate_hz").value)
         self._static_publish_rate_hz = float(self.get_parameter("static_publish_rate_hz").value)
         self._localization_timeout_sec = float(self.get_parameter("localization_timeout_sec").value)
+        self._publish_inward_normal_marker = bool(self.get_parameter("publish_inward_normal_marker").value)
+        self._inward_normal_marker_length_m = float(self.get_parameter("inward_normal_marker_length_m").value)
 
         use_sim_time = self.get_parameter("use_sim_time").value
         self.get_logger().info(f"use_sim_time: {use_sim_time}")
@@ -99,10 +112,28 @@ class GeofenceManagerNode(Node):
         self._polygon_pub = self.create_publisher(PolygonStamped, "/geofence/polygon", polygon_qos)
         self._marker_pub = self.create_publisher(MarkerArray, "/geofence/markers", polygon_qos)
 
+        self._nearest_boundary_point_pub = self.create_publisher(
+            PointStamped,
+            "/geofence/nearest_boundary_point",
+            10,
+        )
+
+        self._distance_to_boundary_pub = self.create_publisher(
+            Float32,
+            "/geofence/distance_to_boundary",
+            10,
+        )
+
         self.create_service(
             IsPoseAllowed,
             "/geofence/is_pose_allowed",
             self._handle_is_pose_allowed,
+        )
+
+        self.create_service(
+            ComputeBounceTarget,
+            "/geofence/compute_bounce_target",
+            self._handle_compute_bounce_target,
         )
 
         if self._pose_source_type == "pose_stamped":
@@ -142,6 +173,7 @@ class GeofenceManagerNode(Node):
             f"pose_source_type='{self._pose_source_type}'"
         )
 
+
     def _load_polygon_or_fail(self) -> None:
         if not self._geofence_file:
             raise ValueError("Parameter 'geofence_file' must not be empty.")
@@ -161,6 +193,7 @@ class GeofenceManagerNode(Node):
                 f"'{self._world_frame}'. This node does not transform frames in v1."
             )
 
+
     def _pose_stamped_callback(self, msg: PoseStamped) -> None:
         self._store_pose(
             x=msg.pose.position.x,
@@ -168,6 +201,7 @@ class GeofenceManagerNode(Node):
             stamp=msg.header.stamp,
             frame_id=msg.header.frame_id,
         )
+
 
     def _odometry_callback(self, msg: Odometry) -> None:
         self._store_pose(
@@ -177,22 +211,30 @@ class GeofenceManagerNode(Node):
             frame_id=msg.header.frame_id,
         )
 
+
     def _store_pose(self, x: float, y: float, stamp, frame_id: str) -> None:
         self._last_pose_x = float(x)
         self._last_pose_y = float(y)
         self._last_pose_stamp = stamp
         self._last_pose_frame_id = frame_id.strip()
 
+
     def _publish_status_timer_callback(self) -> None:
         if not rclpy.ok():
             return
 
-        status = self._build_status_from_latest_pose()
+        status, ctx = self._build_status_and_context_from_latest_pose()
         self._status_pub.publish(status)
 
         inside_msg = Bool()
         inside_msg.data = status.is_inside
         self._inside_pub.publish(inside_msg)
+
+        if ctx is not None:
+            self._publish_boundary_aux_topics(ctx, status.header.stamp)
+            self._publish_dynamic_markers(ctx, status.header.stamp)
+        else:
+            self._delete_dynamic_markers(status.header.stamp)
 
         if status.state != self._last_status_state:
             self.get_logger().info(
@@ -200,6 +242,7 @@ class GeofenceManagerNode(Node):
                 f"{' (zone=' + self._zone_name + ')' if self._zone_name else ''}"
             )
             self._last_status_state = status.state
+
 
     def _publish_static_outputs_timer_callback(self) -> None:
         if not rclpy.ok():
@@ -210,6 +253,82 @@ class GeofenceManagerNode(Node):
 
         if self._publish_markers:
             self._publish_marker_msg()
+
+
+    def _publish_boundary_aux_topics(self, ctx: BoundaryContext, stamp_msg) -> None:
+        point_msg = PointStamped()
+        point_msg.header.stamp = stamp_msg
+        point_msg.header.frame_id = self._polygon_frame_id
+        point_msg.point.x = float(ctx.closest_point[0])
+        point_msg.point.y = float(ctx.closest_point[1])
+        point_msg.point.z = 0.0
+        self._nearest_boundary_point_pub.publish(point_msg)
+
+        dist_msg = Float32()
+        dist_msg.data = float(ctx.distance_m)
+        self._distance_to_boundary_pub.publish(dist_msg)
+
+
+    def _publish_dynamic_markers(self, ctx: BoundaryContext, stamp_msg) -> None:
+        marker_array = MarkerArray()
+
+        if self._publish_inward_normal_marker:
+            marker_array.markers.append(self._make_inward_normal_marker(ctx, stamp_msg))
+
+        if marker_array.markers:
+            self._marker_pub.publish(marker_array)
+
+
+    def _delete_dynamic_markers(self, stamp_msg) -> None:
+        marker_array = MarkerArray()
+
+        marker = Marker()
+        marker.header.stamp = stamp_msg
+        marker.header.frame_id = self._polygon_frame_id
+        marker.ns = "geofence_inward_normal"
+        marker.id = 100
+        marker.action = Marker.DELETE
+
+        marker_array.markers.append(marker)
+        self._marker_pub.publish(marker_array)
+
+
+    def _make_inward_normal_marker(self, ctx: BoundaryContext, stamp_msg) -> Marker:
+        marker = Marker()
+        marker.header.stamp = stamp_msg
+        marker.header.frame_id = self._polygon_frame_id
+        marker.ns = "geofence_inward_normal"
+        marker.id = 100
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        marker.pose.orientation.w = 1.0
+
+        marker.scale.x = 0.08
+        marker.scale.y = 0.16
+        marker.scale.z = 0.16
+
+        marker.color.a = 1.0
+        marker.color.r = 0.2
+        marker.color.g = 1.0
+        marker.color.b = 0.2
+
+        start = Point()
+        start.x = float(ctx.closest_point[0])
+        start.y = float(ctx.closest_point[1])
+        start.z = self._markers_offset_z
+
+        end = Point()
+        end.x = float(
+            ctx.closest_point[0] + self._inward_normal_marker_length_m * ctx.inward_normal_unit[0]
+        )
+        end.y = float(
+            ctx.closest_point[1] + self._inward_normal_marker_length_m * ctx.inward_normal_unit[1]
+        )
+        end.z = self._markers_offset_z
+
+        marker.points = [start, end]
+        return marker
+
 
     def _classify_state_with_hysteresis(self, inside: bool, distance_m: float) -> str:
         """
@@ -271,7 +390,86 @@ class GeofenceManagerNode(Node):
 
         return "UNKNOWN"
 
-    def _build_status_from_latest_pose(self) -> GeofenceStatus:
+
+    def _handle_compute_bounce_target(
+        self,
+        request: ComputeBounceTarget.Request,
+        response: ComputeBounceTarget.Response,
+    ) -> ComputeBounceTarget.Response:
+        if self._last_pose_x is None or self._last_pose_y is None or self._last_pose_stamp is None:
+            response.success = False
+            response.reason = "no valid pose available"
+            return response
+
+        if self._last_pose_frame_id and self._last_pose_frame_id != self._polygon_frame_id:
+            response.success = False
+            response.reason = (
+                f"pose frame '{self._last_pose_frame_id}' does not match geofence frame "
+                f"'{self._polygon_frame_id}'"
+            )
+            return response
+
+        pose_age_sec = self._seconds_since_stamp(self._last_pose_stamp)
+        if pose_age_sec > self._localization_timeout_sec:
+            response.success = False
+            response.reason = "latest pose is stale"
+            return response
+
+        result = compute_bounce_target(
+            robot_xy=(self._last_pose_x, self._last_pose_y),
+            polygon=self._polygon_xy,
+            bounce_angle_deg=float(request.bounce_angle_deg),
+            start_inset_m=float(request.start_inset_m),
+            goal_inset_m=float(request.goal_inset_m),
+            center_bias=float(request.outside_recovery_bias),
+        )
+
+        response.success = result.success
+        response.reason = result.reason
+
+        if not result.success:
+            return response
+
+        response.target_pose.header.stamp = self.get_clock().now().to_msg()
+        response.target_pose.header.frame_id = self._polygon_frame_id
+        response.target_pose.pose.position.x = float(result.target_point[0])
+        response.target_pose.pose.position.y = float(result.target_point[1])
+        response.target_pose.pose.position.z = 0.0
+        response.target_pose.pose.orientation.w = 1.0
+
+        response.boundary_point.x = float(result.boundary_point[0])
+        response.boundary_point.y = float(result.boundary_point[1])
+        response.boundary_point.z = 0.0
+
+        response.far_boundary_point.x = float(result.far_boundary_point[0])
+        response.far_boundary_point.y = float(result.far_boundary_point[1])
+        response.far_boundary_point.z = 0.0
+
+        ctx = self._compute_boundary_context(self._last_pose_x, self._last_pose_y)
+        response.distance_to_boundary_m = float(ctx.distance_m)
+        response.used_recovery_mode = bool(getattr(result, "used_recovery_mode", False))
+
+        return response
+
+
+    def _compute_boundary_context(self, x: float, y: float) -> BoundaryContext:
+        hit = compute_nearest_boundary_hit((x, y), self._polygon_xy)
+        inside = point_in_polygon(x, y, self._polygon_xy)
+        return BoundaryContext(
+            x=x,
+            y=y,
+            inside=inside,
+            distance_m=hit.distance_m,
+            closest_point=hit.closest_point,
+            segment_index=hit.segment_index,
+            tangent_unit=hit.tangent_unit,
+            inward_normal_unit=hit.inward_normal_unit,
+        )
+
+
+    def _build_status_and_context_from_latest_pose(
+        self,
+    ) -> Tuple[GeofenceStatus, Optional[BoundaryContext]]:
         msg = GeofenceStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self._polygon_frame_id
@@ -287,7 +485,7 @@ class GeofenceManagerNode(Node):
             self._raw_inside_count = 0
             self._raw_outside_count = 0
             self._stable_state = "UNKNOWN"
-            return msg
+            return msg, None
 
         if self._last_pose_frame_id and self._last_pose_frame_id != self._polygon_frame_id:
             warn_key = f"{self._last_pose_frame_id}->{self._polygon_frame_id}"
@@ -305,7 +503,7 @@ class GeofenceManagerNode(Node):
             self._raw_inside_count = 0
             self._raw_outside_count = 0
             self._stable_state = "UNKNOWN"
-            return msg
+            return msg, None
 
         self._last_frame_mismatch_warn_key = None
 
@@ -328,30 +526,26 @@ class GeofenceManagerNode(Node):
             self._raw_inside_count = 0
             self._raw_outside_count = 0
             self._stable_state = "UNKNOWN"
-            return msg
+            return msg, None
 
-        x = self._last_pose_x
-        y = self._last_pose_y
+        ctx = self._compute_boundary_context(self._last_pose_x, self._last_pose_y)
 
-        inside = point_in_polygon(x, y, self._polygon_xy)
-        distance_m = distance_to_polygon_edges(x, y, self._polygon_xy)
-        closest_x, closest_y = closest_point_on_polygon(x, y, self._polygon_xy)
-
-        state = self._classify_state_with_hysteresis(inside, distance_m)
+        state = self._classify_state_with_hysteresis(ctx.inside, ctx.distance_m)
         self._stable_state = state
 
         msg.localization_valid = True
-        msg.distance_to_boundary_m = float(distance_m)
+        msg.distance_to_boundary_m = float(ctx.distance_m)
 
-        msg.closest_boundary_point.x = float(closest_x)
-        msg.closest_boundary_point.y = float(closest_y)
+        msg.closest_boundary_point.x = float(ctx.closest_point[0])
+        msg.closest_boundary_point.y = float(ctx.closest_point[1])
         msg.closest_boundary_point.z = 0.0
 
         msg.state = state
         msg.is_inside = state in ("INSIDE", "NEAR_BOUNDARY")
         msg.is_near_boundary = state == "NEAR_BOUNDARY"
 
-        return msg
+        return msg, ctx
+
 
     def _handle_is_pose_allowed(
         self,
@@ -373,13 +567,12 @@ class GeofenceManagerNode(Node):
         x = float(pose.pose.position.x)
         y = float(pose.pose.position.y)
 
-        inside = point_in_polygon(x, y, self._polygon_xy)
-        distance_m = distance_to_polygon_edges(x, y, self._polygon_xy)
-
-        response.allowed = inside
-        response.distance_to_boundary_m = float(distance_m)
-        response.reason = "inside geofence" if inside else "outside geofence"
+        ctx = self._compute_boundary_context(x, y)
+        response.allowed = ctx.inside
+        response.distance_to_boundary_m = float(ctx.distance_m)
+        response.reason = "inside geofence" if ctx.inside else "outside geofence"
         return response
+
 
     def _publish_polygon_msg(self) -> None:
         msg = PolygonStamped()
@@ -394,6 +587,7 @@ class GeofenceManagerNode(Node):
             msg.polygon.points.append(pt)
 
         self._polygon_pub.publish(msg)
+
 
     def _publish_marker_msg(self) -> None:
         marker_array = MarkerArray()
@@ -448,6 +642,7 @@ class GeofenceManagerNode(Node):
         marker_array.markers.append(vertex_marker)
         self._marker_pub.publish(marker_array)
 
+
     def _closed_polygon_xy(self) -> Sequence[XY]:
         if not self._polygon_xy:
             return []
@@ -457,6 +652,7 @@ class GeofenceManagerNode(Node):
 
         return [*self._polygon_xy, self._polygon_xy[0]]
 
+
     def _seconds_since_stamp(self, stamp) -> float:
         now = self.get_clock().now()
         then = Time.from_msg(stamp)
@@ -464,8 +660,10 @@ class GeofenceManagerNode(Node):
 
 
     def destroy_node(self) -> bool:
-        self._status_timer.cancel()
-        self._static_timer.cancel()
+        if hasattr(self, "_status_timer"):
+            self._status_timer.cancel()
+        if hasattr(self, "_static_timer"):
+            self._static_timer.cancel()
         print("Destroying geofence_manager node.")
         return super().destroy_node()
 
