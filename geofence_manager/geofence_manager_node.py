@@ -1,5 +1,45 @@
 #!/usr/bin/env python3
 
+# ----------------------------------------------------------------------------
+#  Geofence manager node for outdoor robots using polygon-based boundaries.
+# 
+#  This node monitors the robot pose relative to a configured geofence polygon
+#  and provides real-time status, geometry insights, and helper services for
+#  higher-level behaviors.
+# 
+#  Core responsibilities:
+#  - Classify robot state: INSIDE, NEAR_BOUNDARY, OUTSIDE, or UNKNOWN
+#  - Compute nearest boundary point and distance to the geofence
+#  - Publish geofence polygon and visualization markers
+#  - Provide geometry-based services (e.g., pose validity, bounce target)
+# 
+#  Published topics:
+#  - /geofence/status                  (GeofenceStatus)
+#  - /geofence/is_inside               (std_msgs/Bool)
+#  - /geofence/nearest_boundary_point  (geometry_msgs/PointStamped)
+#  - /geofence/distance_to_boundary    (std_msgs/Float32)
+#  - /geofence/polygon                 (geometry_msgs/PolygonStamped, latched)
+#  - /geofence/markers                 (visualization_msgs/MarkerArray)
+# 
+#  Services:
+#  - /geofence/is_pose_allowed         (IsPoseAllowed)
+#  - /geofence/compute_bounce_target   (ComputeBounceTarget)
+# 
+#  Visualization:
+#  - Static polygon boundary and vertices
+#  - Dynamic inward-normal marker at nearest boundary point
+# 
+#  Design notes:
+#  - Operates entirely in a single frame (no TF transforms)
+#  - Uses hysteresis and debounce to stabilize state transitions
+#  - Separates geometry computation from behavior (e.g., wandering/patrol)
+# 
+#  Intended use:
+#  - Safety layer for outdoor navigation (GPS + odometry)
+#  - Input to behavior trees, patrol/wander nodes, and recovery logic
+# ----------------------------------------------------------------------------
+
+
 from __future__ import annotations
 
 from typing import List, Optional, Sequence, Tuple
