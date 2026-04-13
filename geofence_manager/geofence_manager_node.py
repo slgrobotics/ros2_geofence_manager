@@ -47,9 +47,11 @@ class GeofenceManagerNode(Node):
         self.declare_parameter("pose_source_type", "pose_stamped")
         self.declare_parameter("world_frame", "map")
         self.declare_parameter("near_boundary_threshold_m", 2.0)
-        self.declare_parameter("publish_markers", True)
         self.declare_parameter("publish_polygon", True)
+        self.declare_parameter("publish_markers", True)
+        self.declare_parameter("markers_offset_z", 0.3)  # Height of the marker above the ground in RViz, in meters.
         self.declare_parameter("status_publish_rate_hz", 5.0)
+        self.declare_parameter("static_publish_rate_hz", 1.0)
         self.declare_parameter("localization_timeout_sec", 2.0)
 
         self._geofence_file = str(self.get_parameter("geofence_file").value)
@@ -57,10 +59,15 @@ class GeofenceManagerNode(Node):
         self._pose_source_type = str(self.get_parameter("pose_source_type").value).strip().lower()
         self._world_frame = str(self.get_parameter("world_frame").value)
         self._near_boundary_threshold_m = float(self.get_parameter("near_boundary_threshold_m").value)
-        self._publish_markers = bool(self.get_parameter("publish_markers").value)
         self._publish_polygon = bool(self.get_parameter("publish_polygon").value)
+        self._publish_markers = bool(self.get_parameter("publish_markers").value)
+        self._markers_offset_z = float(self.get_parameter("markers_offset_z").value)
         self._status_publish_rate_hz = float(self.get_parameter("status_publish_rate_hz").value)
+        self._static_publish_rate_hz = float(self.get_parameter("static_publish_rate_hz").value)
         self._localization_timeout_sec = float(self.get_parameter("localization_timeout_sec").value)
+
+        use_sim_time = self.get_parameter("use_sim_time").value
+        self.get_logger().info(f"use_sim_time: {use_sim_time}")
 
         self._zone_name: str = ""
         self._polygon_frame_id: str = self._world_frame
@@ -114,14 +121,11 @@ class GeofenceManagerNode(Node):
                 f"Use 'pose_stamped' or 'odometry'."
             )
 
-        timer_period = 1.0 / self._status_publish_rate_hz if self._status_publish_rate_hz > 0.0 else 0.2
-        self._status_timer = self.create_timer(timer_period, self._publish_status_timer_callback)
-
-        if self._publish_polygon:
-            self._publish_polygon_msg()
-
-        if self._publish_markers:
-            self._publish_marker_msg()
+        status_timer_period = 1.0 / self._status_publish_rate_hz if self._status_publish_rate_hz > 0.0 else 0.2
+        self._status_timer = self.create_timer(status_timer_period, self._publish_status_timer_callback)
+        
+        static_timer_period = 1.0 / self._static_publish_rate_hz if self._static_publish_rate_hz > 0.0 else 1.0
+        self._static_timer = self.create_timer(static_timer_period, self._publish_static_outputs_timer_callback)
 
         self.get_logger().info(
             f"geofence_manager started | file='{self._geofence_file}' | "
@@ -172,7 +176,6 @@ class GeofenceManagerNode(Node):
         self._last_pose_frame_id = frame_id.strip()
 
     def _publish_status_timer_callback(self) -> None:
-
         if not rclpy.ok():
             return
 
@@ -189,6 +192,16 @@ class GeofenceManagerNode(Node):
                 f"{' (zone=' + self._zone_name + ')' if self._zone_name else ''}"
             )
             self._last_status_state = status.state
+
+    def _publish_static_outputs_timer_callback(self) -> None:
+        if not rclpy.ok():
+            return
+
+        if self._publish_polygon:
+            self._publish_polygon_msg()
+
+        if self._publish_markers:
+            self._publish_marker_msg()
 
     def _build_status_from_latest_pose(self) -> GeofenceStatus:
         msg = GeofenceStatus()
@@ -327,7 +340,7 @@ class GeofenceManagerNode(Node):
             pt = Point()
             pt.x = float(x)
             pt.y = float(y)
-            pt.z = 0.05
+            pt.z = self._markers_offset_z
             line_marker.points.append(pt)
 
         marker_array.markers.append(line_marker)
@@ -352,7 +365,7 @@ class GeofenceManagerNode(Node):
             pt = Point()
             pt.x = float(x)
             pt.y = float(y)
-            pt.z = 0.05
+            pt.z = self._markers_offset_z
             vertex_marker.points.append(pt)
 
         marker_array.markers.append(vertex_marker)
@@ -375,6 +388,7 @@ class GeofenceManagerNode(Node):
 
     def destroy_node(self) -> bool:
         self._status_timer.cancel()
+        self._static_timer.cancel()
         print("Destroying geofence_manager node.")
         return super().destroy_node()
 
