@@ -275,9 +275,16 @@ def main() -> int:
             target_xy = bounce.target_point
 
             # Invert bounce angle for next run to bounce to both sides, add random jitter.
-            bounce_angle_sign = -bounce_angle_sign
+            #bounce_angle_sign = -bounce_angle_sign
+            bounce_angle_sign = 1.0 if random.random() < 0.5 else -1.0
+            #bounce_angle_sign = -1.0
+
             bounce_angle_deg = args.angle_deg * bounce_angle_sign + random.uniform(-args.angle_jitter, args.angle_jitter)
             bounce_angle_deg = clamp(bounce_angle_deg, -60.0, 60.0)
+
+            # bounce_angle_deg += random.uniform(-args.angle_jitter, args.angle_jitter)
+            # bounce_angle_deg = clamp(bounce_angle_deg, -60.0, 60.0)
+            # bounce_angle_deg = abs(bounce_angle_deg) * bounce_angle_sign
 
         direction = normalize((target_xy[0] - robot_xy[0], target_xy[1] - robot_xy[1]))
         robot_xy = (
