@@ -15,7 +15,7 @@ from geofence_manager.geometry_utils import point_in_polygon
 #
 # -- Test it:
 # cd ~/robot_ws/src/ros2_geofence_manager/test
-# ./test_bounce.py --yaml ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
+# ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
 #
 # `geometry_bounce.py` is a pure-geometry helper module for generating an interior “bounce” target when a robot approaches a geofence boundary.
 #

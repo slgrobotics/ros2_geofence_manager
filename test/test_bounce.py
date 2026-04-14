@@ -28,7 +28,7 @@ from geofence_manager.geofence_loader import load_geofence_as_local_cartesian
 
 #
 # cd ~/robot_ws/src/ros2_geofence_manager/test
-# ./test_bounce.py --yaml ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
+# ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
 #
 
 
@@ -45,9 +45,9 @@ def parse_args() -> argparse.Namespace:
         description="Standalone geofence bounce visualizer."
     )
     parser.add_argument(
-        "--yaml",
+        "--file",
         required=True,
-        help="Path to geofence polygon YAML file.",
+        help="Path to geofence polygon YAML or QGroundControl PLAN file.",
     )
     parser.add_argument(
         "--x",
@@ -227,12 +227,12 @@ def main() -> int:
     args = parse_args()
     signal.signal(signal.SIGINT, _handle_sigint)
 
-    yaml_path = Path(args.yaml)
-    geofence, local_frame = load_geofence_as_local_cartesian(str(yaml_path))
+    geofence_file_path = Path(args.file)
+    geofence, local_frame = load_geofence_as_local_cartesian(str(geofence_file_path))
     polygon = list(geofence.points)
 
     print("\n=== Geofence Loaded ===")
-    print(f"file:       {yaml_path}")
+    print(f"file:       {geofence_file_path}")
     print(f"name:       {geofence.name}")
     print(f"frame_id:   {geofence.frame_id}")
     print(f"num points: {len(geofence.points)}")

@@ -19,7 +19,7 @@ def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
 
     geofence:
       name: home_area
-      frame_id: map
+      frame_id: local_cartesian
       points:
         - {x: 0.0, y: 0.0}
         - {x: 10.0, y: 0.0}
@@ -41,7 +41,7 @@ def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
         raise ValueError("Geofence YAML must contain a top-level 'geofence' mapping.")
 
     name = str(geofence.get("name", "geofence"))
-    frame_id = str(geofence.get("frame_id", "map"))
+    frame_id = str(geofence.get("frame_id", "local_cartesian"))
 
     raw_points = geofence.get("points")
     if not isinstance(raw_points, list):
