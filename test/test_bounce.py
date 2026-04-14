@@ -11,17 +11,19 @@ from pathlib import Path
 from typing import List, Sequence, Tuple
 
 import cv2
+from matplotlib import image
 import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from geofence_manager.common_data import Point2D
 from geofence_manager.geometry_utils import point_in_polygon
-from geofence_manager.geofence_loader import load_geofence
 from geofence_manager.geometry_bounce import (
     compute_bounce_target,
     compute_nearest_boundary_hit,
 )
+from geofence_manager.wgs84_to_local import latlon_to_local_xy
+from geofence_manager.geofence_loader import load_geofence_as_local_cartesian
 
 
 #
@@ -226,13 +228,19 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_sigint)
 
     yaml_path = Path(args.yaml)
-    geofence = load_geofence(str(yaml_path))
+    geofence, local_frame = load_geofence_as_local_cartesian(str(yaml_path))
+    polygon = list(geofence.points)
 
     print("\n=== Geofence Loaded ===")
     print(f"file:       {yaml_path}")
     print(f"name:       {geofence.name}")
     print(f"frame_id:   {geofence.frame_id}")
     print(f"num points: {len(geofence.points)}")
+    if local_frame is not None:
+        print(
+            f"local origin (lat, lon): "
+            f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f})"
+        )
 
     # Print first few points for sanity
     for i, p in enumerate(geofence.points[:5]):
@@ -249,6 +257,21 @@ def main() -> int:
     print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
     print("========================\n")
 
+    if local_frame is not None:
+        # Input x/y for .plan files is still given as lat/lon in the current convention.
+        robot_xy = latlon_to_local_xy(
+            lat_deg=args.x,
+            lon_deg=args.y,
+            origin_lat_deg=local_frame.origin_lat_deg,
+            origin_lon_deg=local_frame.origin_lon_deg,
+        )
+        print(
+            f"Initial robot WGS84: ({args.x:.8f}, {args.y:.8f}) -> "
+            f"local XY: ({robot_xy[0]:.3f}, {robot_xy[1]:.3f})"
+        )
+    else:
+        robot_xy = (args.x, args.y)
+
     polygon: List[Point2D] = list(geofence.points)
 
     if len(polygon) < 3:
@@ -256,8 +279,6 @@ def main() -> int:
         return 1
 
     bounds = compute_bounds(polygon)
-
-    robot_xy: Point2D = (args.x, args.y)
 
     print(f"Initial robot position: ({robot_xy[0]:.6f}, {robot_xy[1]:.6f})")
 
@@ -343,8 +364,13 @@ def main() -> int:
             for i in range(1, len(trail)):
                 draw_line(frame, trail[i - 1], trail[i], bounds, (90, 90, 255), 1)
 
-        draw_point(frame, robot_xy, bounds, (0, 255, 0), radius=6)
+        draw_point(frame, robot_xy, bounds, (0, 255, 0), radius=12)
         draw_point(frame, target_xy, bounds, (0, 180, 255), radius=6)
+
+        center = world_to_image(target_xy, bounds, frame.shape[1], frame.shape[0])
+
+        tx, ty = center[0] + 8, center[1] - 8
+        draw_text(frame, "Target", tx, ty)
 
         draw_point(frame, hit.closest_point, bounds, (255, 255, 0), radius=5)
         draw_line(frame, robot_xy, hit.closest_point, bounds, (255, 255, 0), 1)

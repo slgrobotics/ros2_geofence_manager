@@ -8,6 +8,10 @@ from geofence_manager.common_data import GeofenceDefinition
 
 from geofence_manager.polygon_loader import load_geofence_from_yaml
 from geofence_manager.qgc_plan_loader import load_geofence_from_qgc_plan
+from geofence_manager.wgs84_to_local import (
+    LocalFrameDefinition,
+    convert_wgs84_polygon_to_local,
+)
 
 
 def load_geofence(file_path: str) -> GeofenceDefinition:
@@ -45,3 +49,22 @@ def load_geofence(file_path: str) -> GeofenceDefinition:
         f"Unsupported geofence file extension '{suffix}' for file '{file_path}'. "
         f"Supported extensions: .yaml, .yml, .plan"
     )
+
+
+def load_geofence_as_local_cartesian(
+    file_path: str,
+    frame_id: str = "local_cartesian",
+) -> tuple[GeofenceDefinition, LocalFrameDefinition | None]:
+    """
+    Load a geofence and convert WGS84 input to a local Cartesian frame.
+
+    Returns:
+      - GeofenceDefinition
+      - LocalFrameDefinition if conversion from WGS84 was performed, else None
+    """
+    geofence = load_geofence(file_path)
+
+    if geofence.frame_id.lower() == "wgs84":
+        return convert_wgs84_polygon_to_local(geofence, frame_id=frame_id)
+
+    return geofence, None

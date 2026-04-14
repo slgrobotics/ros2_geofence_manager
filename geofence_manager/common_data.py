@@ -6,6 +6,14 @@ Point2D = Tuple[float, float]  # (x, y) in a local Cartesian frame, or (lat, lon
 
 INVALID_DISTANCE_M = -1.0
 EPS = 1e-9
+EARTH_RADIUS_M = 6378137.0
+
+@dataclass
+class LocalFrameDefinition:
+    origin_lat_deg: float
+    origin_lon_deg: float
+    frame_id: str = "local_cartesian"
+
 
 @dataclass
 class GeofenceDefinition:
