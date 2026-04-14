@@ -58,10 +58,10 @@ from geofence_manager_interfaces.msg import GeofenceStatus
 from geofence_manager_interfaces.srv import IsPoseAllowed
 from geofence_manager_interfaces.srv import ComputeBounceTarget
 
-from geofence_manager.geometry_utils import point_in_polygon
-from geofence_manager.geofence_loader import load_geofence_as_local_cartesian
-from geofence_manager.geometry_bounce import (compute_bounce_target, compute_nearest_boundary_hit,)
-from geofence_manager.common_data import BoundaryContext, Point2D, INVALID_DISTANCE_M
+from geofence_manager.helpers.geometry_utils import point_in_polygon
+from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cartesian
+from geofence_manager.helpers.geometry_bounce import (compute_bounce_target, compute_nearest_boundary_hit,)
+from geofence_manager.helpers.common_data import BoundaryContext, Point2D, INVALID_DISTANCE_M
 
 
 class GeofenceManagerNode(Node):

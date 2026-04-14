@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 import math
 
-from geofence_manager.geometry_utils import point_in_polygon
+from geofence_manager.helpers.geometry_utils import point_in_polygon
 
 # ---------------------------------------------------------------------------------------------
 #
@@ -81,7 +81,7 @@ from geofence_manager.geometry_utils import point_in_polygon
 # In short, this module provides the geometric foundation for “bounce off the boundary and continue moving safely inside the allowed area.”
 # ---------------------------------------------------------------------------------------------
 
-from geofence_manager.common_data import Point2D, BoundaryHit, BounceTargetResult, EPS
+from geofence_manager.helpers.common_data import Point2D, BoundaryHit, BounceTargetResult, EPS
 
 
 def compute_nearest_boundary_hit(robot_xy: Point2D, polygon: Sequence[Point2D]) -> BoundaryHit:

@@ -16,14 +16,14 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from geofence_manager.common_data import Point2D
-from geofence_manager.geometry_utils import point_in_polygon
-from geofence_manager.geometry_bounce import (
+from geofence_manager.helpers.common_data import Point2D
+from geofence_manager.helpers.geometry_utils import point_in_polygon
+from geofence_manager.helpers.geometry_bounce import (
     compute_bounce_target,
     compute_nearest_boundary_hit,
 )
-from geofence_manager.wgs84_to_local import latlon_to_local_xy
-from geofence_manager.geofence_loader import load_geofence_as_local_cartesian
+from geofence_manager.helpers.wgs84_to_local import latlon_to_local_xy
+from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cartesian
 
 
 #

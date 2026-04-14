@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import List
 
-from geofence_manager.common_data import Point2D, GeofenceDefinition, LocalFrameDefinition, EARTH_RADIUS_M
+from geofence_manager.helpers.common_data import Point2D, GeofenceDefinition, LocalFrameDefinition, EARTH_RADIUS_M
 
 
 def latlon_to_local_xy(

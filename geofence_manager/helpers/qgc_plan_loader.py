@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import List, Tuple
 
-from geofence_manager.common_data import GeofenceDefinition, Point2D
+from geofence_manager.helpers.common_data import GeofenceDefinition, Point2D
 
 
 def load_geofence_from_qgc_plan(file_path: str) -> GeofenceDefinition:

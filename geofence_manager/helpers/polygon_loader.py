@@ -8,7 +8,7 @@ from typing import List, Tuple
 
 import yaml
 
-from geofence_manager.common_data import GeofenceDefinition, Point2D
+from geofence_manager.helpers.common_data import GeofenceDefinition, Point2D
 
 
 def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
