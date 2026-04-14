@@ -2,7 +2,7 @@ Back to [Main Project Home](https://github.com/slgrobotics/articubot_one/wiki)
 
 ## ROS2 Geofence Manager
 
-A ROS2 package for **polygon-based geofencing**, designed for outdoor patrolling robots using GPS, Nav2, and Behavior Trees.
+A ROS2 package for **polygon-based geofencing** (or *geocaging*), designed for outdoor patrolling robots using GPS, Nav2, and Behavior Trees.
 
 This node provides:
 - Real-time geofence status
