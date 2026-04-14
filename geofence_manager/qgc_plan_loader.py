@@ -35,8 +35,8 @@ def load_geofence_from_qgc_plan(file_path: str) -> GeofenceDefinition:
     # Notes:
     # - Returns the first inclusion polygon found.
     # - Points are returned as (lat, lon).
-    # - frame_id is set to "wgs84".
-    # - name defaults to the file stem.
+    # - reference_frame is set to "wgs84".
+    # - zone_name defaults to the file stem.
     # ----------------------------------------------------------
 
     path = Path(file_path)
@@ -95,7 +95,7 @@ def load_geofence_from_qgc_plan(file_path: str) -> GeofenceDefinition:
         raise ValueError("QGC geofence polygon must contain at least 3 points.")
 
     return GeofenceDefinition(
-        name=path.stem,
-        frame_id="wgs84",
+        zone_name=path.stem,
+        reference_frame="wgs84",
         points=points,
     )

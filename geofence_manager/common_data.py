@@ -12,13 +12,13 @@ EARTH_RADIUS_M = 6378137.0
 class LocalFrameDefinition:
     origin_lat_deg: float
     origin_lon_deg: float
-    frame_id: str = "local_cartesian"
+    reference_frame: str = "local_cartesian"
 
 
 @dataclass
 class GeofenceDefinition:
-    name: str
-    frame_id: str
+    zone_name: str
+    reference_frame: str
     points: List[Point2D]
 
 

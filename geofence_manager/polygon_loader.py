@@ -18,8 +18,8 @@ def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
     Expected format:
 
     geofence:
-      name: home_area
-      frame_id: local_cartesian
+      zone_name: home_area
+      reference_frame: local_cartesian
       points:
         - {x: 0.0, y: 0.0}
         - {x: 10.0, y: 0.0}
@@ -40,8 +40,8 @@ def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
     if not isinstance(geofence, dict):
         raise ValueError("Geofence YAML must contain a top-level 'geofence' mapping.")
 
-    name = str(geofence.get("name", "geofence"))
-    frame_id = str(geofence.get("frame_id", "local_cartesian"))
+    zone_name = str(geofence.get("zone_name", "geofence"))
+    reference_frame = str(geofence.get("reference_frame", "local_cartesian"))
 
     raw_points = geofence.get("points")
     if not isinstance(raw_points, list):
@@ -67,7 +67,7 @@ def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
         raise ValueError("Geofence polygon must contain at least 3 points.")
 
     return GeofenceDefinition(
-        name=name,
-        frame_id=frame_id,
+        zone_name=zone_name,
+        reference_frame=reference_frame,
         points=points,
     )

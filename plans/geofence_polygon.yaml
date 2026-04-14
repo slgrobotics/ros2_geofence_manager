@@ -1,6 +1,6 @@
 geofence:
-  name: home_area
-  frame_id: local_cartesian
+  zone_name: home_area
+  reference_frame: local_cartesian
   points:
     - {x: -3.5, y: -3.5}
     - {x: -3.5, y: 3.5}

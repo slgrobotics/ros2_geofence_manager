@@ -53,7 +53,7 @@ def load_geofence(file_path: str) -> GeofenceDefinition:
 
 def load_geofence_as_local_cartesian(
     file_path: str,
-    frame_id: str = "local_cartesian",
+    reference_frame: str = "local_cartesian",
 ) -> tuple[GeofenceDefinition, LocalFrameDefinition | None]:
     """
     Load a geofence and convert WGS84 input to a local Cartesian frame.
@@ -64,7 +64,7 @@ def load_geofence_as_local_cartesian(
     """
     geofence = load_geofence(file_path)
 
-    if geofence.frame_id.lower() == "wgs84":
-        return convert_wgs84_polygon_to_local(geofence, frame_id=frame_id)
+    if geofence.reference_frame.lower() == "wgs84":
+        return convert_wgs84_polygon_to_local(geofence, reference_frame=reference_frame)
 
     return geofence, None

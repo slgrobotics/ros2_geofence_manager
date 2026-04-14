@@ -207,10 +207,10 @@ class GeofenceManagerNode(Node):
         geofence, local_frame = load_geofence_as_local_cartesian(self._geofence_file)
 
         self.get_logger().info("\n=== Geofence Loaded ===")
-        self.get_logger().info(f"file:       {self._geofence_file}")
-        self.get_logger().info(f"name:       {geofence.name}")
-        self.get_logger().info(f"frame_id:   {geofence.frame_id}")
-        self.get_logger().info(f"num points: {len(geofence.points)}")
+        self.get_logger().info(f"file:            {self._geofence_file}")
+        self.get_logger().info(f"zone_name:       {geofence.zone_name}")
+        self.get_logger().info(f"reference_frame: {geofence.reference_frame}")
+        self.get_logger().info(f"num points:      {len(geofence.points)}")
         if local_frame is not None:
             self.get_logger().info(
                 f"local origin (lat, lon): "
@@ -232,8 +232,8 @@ class GeofenceManagerNode(Node):
         self.get_logger().info(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
         self.get_logger().info("\n========================")
 
-        self._zone_name = geofence.name
-        self._polygon_frame_id = geofence.frame_id
+        self._zone_name = geofence.zone_name
+        self._polygon_frame_id = geofence.reference_frame
         self._polygon_xy = list(geofence.points)
 
         if len(self._polygon_xy) < 3:

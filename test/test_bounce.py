@@ -232,10 +232,10 @@ def main() -> int:
     polygon = list(geofence.points)
 
     print("\n=== Geofence Loaded ===")
-    print(f"file:       {geofence_file_path}")
-    print(f"name:       {geofence.name}")
-    print(f"frame_id:   {geofence.frame_id}")
-    print(f"num points: {len(geofence.points)}")
+    print(f"file:            {geofence_file_path}")
+    print(f"zone_name:       {geofence.zone_name}")
+    print(f"reference_frame: {geofence.reference_frame}")
+    print(f"num points:      {len(geofence.points)}")
     if local_frame is not None:
         print(
             f"local origin (lat, lon): "
@@ -380,8 +380,8 @@ def main() -> int:
             draw_line(frame, bounce_dbg.boundary_point, bounce_dbg.far_boundary_point, bounds, (120, 120, 120), 1)
             draw_line(frame, robot_xy, bounce_dbg.target_point, bounds, (0, 180, 255), 1)
 
-        draw_text(frame, f"zone: {geofence.name}", 15, 25)
-        draw_text(frame, f"frame: {geofence.frame_id}", 15, 50)
+        draw_text(frame, f"zone name: {geofence.zone_name}", 15, 25)
+        draw_text(frame, f"ref frame: {geofence.reference_frame}", 15, 50)
         draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, 75)
         draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, 100)
         draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, 125)

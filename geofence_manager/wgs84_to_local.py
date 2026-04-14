@@ -44,7 +44,7 @@ def convert_wgs84_polygon_to_local(
     geofence_wgs84: GeofenceDefinition,
     origin_lat_deg: float | None = None,
     origin_lon_deg: float | None = None,
-    frame_id: str = "local_cartesian",
+    reference_frame: str = "local_cartesian",
 ) -> tuple[GeofenceDefinition, LocalFrameDefinition]:
     """
     Convert a WGS84 geofence polygon into a local Cartesian frame.
@@ -56,9 +56,9 @@ def convert_wgs84_polygon_to_local(
       - converted GeofenceDefinition with points in meters
       - LocalFrameDefinition describing the chosen origin
     """
-    if geofence_wgs84.frame_id.lower() != "wgs84":
+    if geofence_wgs84.reference_frame.lower() != "wgs84":
         raise ValueError(
-            f"Expected WGS84 geofence, got frame_id='{geofence_wgs84.frame_id}'"
+            f"Expected WGS84 geofence, got reference_frame='{geofence_wgs84.reference_frame}' instead."
         )
 
     if len(geofence_wgs84.points) < 3:
@@ -83,15 +83,15 @@ def convert_wgs84_polygon_to_local(
         )
 
     local_geofence = GeofenceDefinition(
-        name=geofence_wgs84.name,
-        frame_id=frame_id,
+        zone_name=geofence_wgs84.zone_name,
+        reference_frame=reference_frame,
         points=local_points,
     )
 
     local_frame = LocalFrameDefinition(
         origin_lat_deg=origin_lat_deg,
         origin_lon_deg=origin_lon_deg,
-        frame_id=frame_id,
+        reference_frame=reference_frame,
     )
 
     return local_geofence, local_frame
