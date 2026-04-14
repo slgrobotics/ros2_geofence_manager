@@ -43,6 +43,7 @@
 from __future__ import annotations
 
 from typing import List, Optional, Sequence, Tuple
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -60,6 +61,7 @@ from geofence_manager_interfaces.srv import ComputeBounceTarget
 
 from geofence_manager.helpers.geometry_utils import point_in_polygon
 from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cartesian
+from geofence_manager.helpers.qgc_plan_loader_ros import load_geofence_from_qgc_plan_ros
 from geofence_manager.helpers.geometry_bounce import (compute_bounce_target, compute_nearest_boundary_hit,)
 from geofence_manager.helpers.common_data import BoundaryContext, Point2D, INVALID_DISTANCE_M
 
@@ -193,7 +195,7 @@ class GeofenceManagerNode(Node):
         self._raw_inside_count: int = 0
 
         self.get_logger().info(
-            f"geofence_manager started | file='{self._geofence_file}' | "
+            f"geofence_manager started | file='{self._geofence_file}'\n"
             f"zone='{self._zone_name}' | zone_frame_id='{self._polygon_frame_id}' | "
             f"points={len(self._polygon_xy)} | pose_topic='{self._pose_topic}' | "
             f"pose_source_type='{self._pose_source_type}'"
@@ -204,7 +206,18 @@ class GeofenceManagerNode(Node):
         if not self._geofence_file:
             raise ValueError("Parameter 'geofence_file' must not be empty.")
 
-        geofence, local_frame = load_geofence_as_local_cartesian(self._geofence_file, frame_id=self._world_frame)
+        suffix = Path(self._geofence_file).suffix.lower()
+
+        if suffix == ".plan":
+            geofence, local_frame = load_geofence_from_qgc_plan_ros(
+                node=self,
+                file_path=self._geofence_file,
+                from_service_name="/fromLL",
+                to_service_name="/toLL",
+                frame_id=self._world_frame,
+            )
+        else:
+            geofence, local_frame = load_geofence_as_local_cartesian(self._geofence_file, frame_id=self._world_frame)
 
         self.get_logger().info("\n=== Geofence Loaded ===")
         self.get_logger().info(f"file:            {self._geofence_file}")
