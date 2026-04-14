@@ -12,10 +12,12 @@ This node provides:
 
 It supports:
 - Simple YAML-defined polygons (for debugging or when X,Y local coordinates are available)
-- QGroundControl (`*.plan`) geofences - defined in (lat,lon) terms
+- [QGroundControl](https://qgroundcontrol.com/) (`*.plan`) geofences - defined in (lat,lon) terms
 - Proper *WGS84* → *ROS `map` frame* conversion using ROS services
 
 <img width="2033" height="783" alt="Screenshot from 2026-04-14 15-59-44" src="https://github.com/user-attachments/assets/e88da6c5-1119-4f84-943a-39b0a404e1b8" />
+
+**Note:** [QGroundControl](https://qgroundcontrol.com/) provides and easy way to [create geofence](https://docs.qgroundcontrol.com/Stable_V5.0/en/qgc-user-guide/plan_view/plan_geofence.html) definition files (*.plan* files).
 
 ### Overview
 
@@ -40,6 +42,8 @@ It also provides services that higher-level logic (Behavior Trees, patrol manage
 - Bounce target computation (for wandering / recovery)
 - QGC `.plan` support with **ROS-consistent coordinate conversion**
 
+Here are some [considerations and history](https://github.com/slgrobotics/articubot_one/wiki/Conversations-with-Overlords#question-16) of this project.
+
 ### Example Usage
 
 #### Build
@@ -48,6 +52,7 @@ It also provides services that higher-level logic (Behavior Trees, patrol manage
 mkdir -p ~/robot_ws/src
 cd ~/robot_ws/src
 git clone https://github.com/slgrobotics/ros2_geofence_manager.git
+git clone https://github.com/slgrobotics/ros2_geofence_manager_interfaces.git
 cd ~/robot_ws
 colcon build
 ```
@@ -87,7 +92,7 @@ geofence_manager_node
 ```
 
 Loads:
-- QGroundControl *.plan* file or simlified *.yaml* file with geofence polygon definition.
+- [QGroundControl](https://qgroundcontrol.com/) *.plan* file or simlified *.yaml* file with geofence polygon definition.
 
 Consumes:
 - Robot pose (e.g. `/odometry/global`)
@@ -144,7 +149,7 @@ geofence:
     - {x: 3.5, y: -3.5}
 ```
 
-#### 2. QGroundControl `.plan`
+#### 2. [QGroundControl](https://qgroundcontrol.com/) `.plan`
 
 Extracted from:
 
@@ -272,8 +277,11 @@ This ensures:
   - geometry logic
   - behavior
 
+Here are some [considerations and history](https://github.com/slgrobotics/articubot_one/wiki/Conversations-with-Overlords#question-16) of this project.
+
 ### Future Work
 
+- [Mission Planner](https://ardupilot.org/planner/) *.txt* file format support - here is [documentation](https://ardupilot.org/planner/docs/mission-planner-flight-plan.html#fences-creation)
 - Multiple geofence zones
 - Inclusion/exclusion regions
 - Dynamic geofence updates
