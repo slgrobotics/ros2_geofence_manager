@@ -59,7 +59,7 @@ from geofence_manager_interfaces.srv import IsPoseAllowed
 from geofence_manager_interfaces.srv import ComputeBounceTarget
 
 from geofence_manager.geometry_utils import point_in_polygon
-from geofence_manager.geofence_loader import load_geofence
+from geofence_manager.geofence_loader import load_geofence_as_local_cartesian
 from geofence_manager.geometry_bounce import (compute_bounce_target, compute_nearest_boundary_hit,)
 from geofence_manager.common_data import BoundaryContext, Point2D, INVALID_DISTANCE_M
 
@@ -204,10 +204,36 @@ class GeofenceManagerNode(Node):
         if not self._geofence_file:
             raise ValueError("Parameter 'geofence_file' must not be empty.")
 
-        geofence = load_geofence(self._geofence_file)
+        geofence, local_frame = load_geofence_as_local_cartesian(self._geofence_file)
+
+        self.get_logger().info("\n=== Geofence Loaded ===")
+        self.get_logger().info(f"file:       {self._geofence_file}")
+        self.get_logger().info(f"name:       {geofence.name}")
+        self.get_logger().info(f"frame_id:   {geofence.frame_id}")
+        self.get_logger().info(f"num points: {len(geofence.points)}")
+        if local_frame is not None:
+            self.get_logger().info(
+                f"local origin (lat, lon): "
+                f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f})"
+            )
+
+        # Print first few points for sanity
+        for i, p in enumerate(geofence.points[:5]):
+            self.get_logger().info(f"  pt[{i}]: {p}")
+
+        if len(geofence.points) > 5:
+            self.get_logger().info("  ...")
+
+        # Compute bounds for visibility check
+        xs = [p[0] for p in geofence.points]
+        ys = [p[1] for p in geofence.points]
+
+        self.get_logger().info(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
+        self.get_logger().info(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
+        self.get_logger().info("========================\n")
 
         self._zone_name = geofence.name
-        self._polygon_frame_id = geofence.frame_id or self._world_frame
+        self._polygon_frame_id = geofence.frame_id
         self._polygon_xy = list(geofence.points)
 
         if len(self._polygon_xy) < 3:
@@ -284,7 +310,7 @@ class GeofenceManagerNode(Node):
     def _publish_boundary_aux_topics(self, ctx: BoundaryContext, stamp_msg) -> None:
         point_msg = PointStamped()
         point_msg.header.stamp = stamp_msg
-        point_msg.header.frame_id = self._polygon_frame_id
+        point_msg.header.frame_id = self._world_frame
         point_msg.point.x = float(ctx.closest_point[0])
         point_msg.point.y = float(ctx.closest_point[1])
         point_msg.point.z = self._markers_offset_z
@@ -310,7 +336,7 @@ class GeofenceManagerNode(Node):
 
         marker = Marker()
         marker.header.stamp = stamp_msg
-        marker.header.frame_id = self._polygon_frame_id
+        marker.header.frame_id = self._world_frame
         marker.ns = "geofence_inward_normal"
         marker.id = 100
         marker.action = Marker.DELETE
@@ -322,7 +348,7 @@ class GeofenceManagerNode(Node):
     def _make_inward_normal_marker(self, ctx: BoundaryContext, stamp_msg) -> Marker:
         marker = Marker()
         marker.header.stamp = stamp_msg
-        marker.header.frame_id = self._polygon_frame_id
+        marker.header.frame_id = self._world_frame
         marker.ns = "geofence_inward_normal"
         marker.id = 100
         marker.type = Marker.ARROW
@@ -457,7 +483,7 @@ class GeofenceManagerNode(Node):
             return response
 
         response.target_pose.header.stamp = self.get_clock().now().to_msg()
-        response.target_pose.header.frame_id = self._polygon_frame_id
+        response.target_pose.header.frame_id = self._world_frame
         response.target_pose.pose.position.x = float(result.target_point[0])
         response.target_pose.pose.position.y = float(result.target_point[1])
         response.target_pose.pose.position.z = 0.0
@@ -498,7 +524,7 @@ class GeofenceManagerNode(Node):
     ) -> Tuple[GeofenceStatus, Optional[BoundaryContext]]:
         msg = GeofenceStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self._polygon_frame_id
+        msg.header.frame_id = self._world_frame
         msg.zone_name = self._zone_name
         msg.closest_boundary_point = Point()
         msg.distance_to_boundary_m = INVALID_DISTANCE_M
@@ -603,7 +629,7 @@ class GeofenceManagerNode(Node):
     def _publish_polygon_msg(self) -> None:
         msg = PolygonStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self._polygon_frame_id
+        msg.header.frame_id = self._world_frame
 
         for x, y in self._closed_polygon_xy():
             pt = Point32()
@@ -621,7 +647,7 @@ class GeofenceManagerNode(Node):
 
         line_marker = Marker()
         line_marker.header.stamp = stamp
-        line_marker.header.frame_id = self._polygon_frame_id
+        line_marker.header.frame_id = self._world_frame
         line_marker.ns = "geofence_boundary"
         line_marker.id = 0
         line_marker.type = Marker.LINE_STRIP
@@ -644,7 +670,7 @@ class GeofenceManagerNode(Node):
 
         vertex_marker = Marker()
         vertex_marker.header.stamp = stamp
-        vertex_marker.header.frame_id = self._polygon_frame_id
+        vertex_marker.header.frame_id = self._world_frame
         vertex_marker.ns = "geofence_vertices"
         vertex_marker.id = 1
         vertex_marker.type = Marker.SPHERE_LIST
