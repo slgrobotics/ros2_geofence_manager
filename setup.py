@@ -17,6 +17,7 @@ setup(
         # Use glob to include all launch and config files automatically
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'plans'), glob('plans/*.*')),
     ],
     install_requires=['setuptools', 'PyYAML'],
     zip_safe=True,

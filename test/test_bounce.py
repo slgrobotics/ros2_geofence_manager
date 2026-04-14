@@ -15,18 +15,20 @@ import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from geofence_manager.polygon_loader import load_geofence_from_yaml
+from geofence_manager.common_data import Point2D
+from geofence_manager.geometry_utils import point_in_polygon
+from geofence_manager.geofence_loader import load_geofence
 from geofence_manager.geometry_bounce import (
     compute_bounce_target,
     compute_nearest_boundary_hit,
 )
 
+
 #
 # cd ~/robot_ws/src/ros2_geofence_manager/test
-# ./test_bounce.py --yaml ../config/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30
+# ./test_bounce.py --yaml ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
 #
 
-XY = Tuple[float, float]
 
 _RUNNING = True
 
@@ -114,7 +116,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def compute_bounds(points: Sequence[XY], margin_ratio: float = 0.1) -> Tuple[float, float, float, float]:
+def compute_bounds(points: Sequence[Point2D], margin_ratio: float = 0.1) -> Tuple[float, float, float, float]:
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
 
@@ -138,7 +140,7 @@ def compute_bounds(points: Sequence[XY], margin_ratio: float = 0.1) -> Tuple[flo
 
 
 def world_to_image(
-    p: XY,
+    p: Point2D,
     bounds: Tuple[float, float, float, float],
     width: int,
     height: int,
@@ -155,7 +157,7 @@ def world_to_image(
 
 def draw_polygon(
     image: np.ndarray,
-    polygon: Sequence[XY],
+    polygon: Sequence[Point2D],
     bounds: Tuple[float, float, float, float],
 ) -> None:
     pts = [world_to_image(p, bounds, image.shape[1], image.shape[0]) for p in polygon]
@@ -165,7 +167,7 @@ def draw_polygon(
 
 def draw_point(
     image: np.ndarray,
-    p: XY,
+    p: Point2D,
     bounds: Tuple[float, float, float, float],
     color: Tuple[int, int, int],
     radius: int = 5,
@@ -178,8 +180,8 @@ def draw_point(
 
 def draw_line(
     image: np.ndarray,
-    a: XY,
-    b: XY,
+    a: Point2D,
+    b: Point2D,
     bounds: Tuple[float, float, float, float],
     color: Tuple[int, int, int],
     thickness: int = 1,
@@ -202,14 +204,14 @@ def draw_text(image: np.ndarray, text: str, x: int, y: int) -> None:
     )
 
 
-def normalize(v: XY) -> XY:
+def normalize(v: Point2D) -> Point2D:
     n = math.hypot(v[0], v[1])
     if n <= 1e-12:
         return (0.0, 0.0)
     return (v[0] / n, v[1] / n)
 
 
-def dist(a: XY, b: XY) -> float:
+def dist(a: Point2D, b: Point2D) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
@@ -224,8 +226,30 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_sigint)
 
     yaml_path = Path(args.yaml)
-    geofence = load_geofence_from_yaml(str(yaml_path))
-    polygon: List[XY] = list(geofence.points)
+    geofence = load_geofence(str(yaml_path))
+
+    print("\n=== Geofence Loaded ===")
+    print(f"file:       {yaml_path}")
+    print(f"name:       {geofence.name}")
+    print(f"frame_id:   {geofence.frame_id}")
+    print(f"num points: {len(geofence.points)}")
+
+    # Print first few points for sanity
+    for i, p in enumerate(geofence.points[:5]):
+        print(f"  pt[{i}]: {p}")
+
+    if len(geofence.points) > 5:
+        print("  ...")
+
+    # Compute bounds for visibility check
+    xs = [p[0] for p in geofence.points]
+    ys = [p[1] for p in geofence.points]
+
+    print(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
+    print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
+    print("========================\n")
+
+    polygon: List[Point2D] = list(geofence.points)
 
     if len(polygon) < 3:
         print("Polygon must contain at least 3 points.", file=sys.stderr)
@@ -233,8 +257,14 @@ def main() -> int:
 
     bounds = compute_bounds(polygon)
 
-    robot_xy: XY = (args.x, args.y)
-    trail: List[XY] = [robot_xy]
+    robot_xy: Point2D = (args.x, args.y)
+
+    print(f"Initial robot position: ({robot_xy[0]:.6f}, {robot_xy[1]:.6f})")
+
+    inside = point_in_polygon(robot_xy[0], robot_xy[1], geofence.points)
+    print(f"Initial inside polygon: {inside}")
+
+    trail: List[Point2D] = [robot_xy]
 
     bounce_angle_deg = args.angle_deg
     bounce_angle_sign = 1.0
@@ -251,7 +281,7 @@ def main() -> int:
         print(f"Initial bounce target failed: {bounce.reason}", file=sys.stderr)
         return 1
 
-    target_xy: XY = bounce.target_point
+    target_xy: Point2D = bounce.target_point
 
     cv2.namedWindow("Geofence Bounce Test", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Geofence Bounce Test", args.width, args.height)

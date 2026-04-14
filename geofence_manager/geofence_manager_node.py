@@ -43,7 +43,6 @@
 from __future__ import annotations
 
 from typing import List, Optional, Sequence, Tuple
-from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
@@ -60,22 +59,9 @@ from geofence_manager_interfaces.srv import IsPoseAllowed
 from geofence_manager_interfaces.srv import ComputeBounceTarget
 
 from geofence_manager.geometry_utils import point_in_polygon
-from geofence_manager.polygon_loader import load_geofence_from_yaml
+from geofence_manager.geofence_loader import load_geofence
 from geofence_manager.geometry_bounce import (compute_bounce_target, compute_nearest_boundary_hit,)
-
-XY = Tuple[float, float]
-INVALID_DISTANCE_M = -1.0
-
-@dataclass
-class BoundaryContext:
-    x: float
-    y: float
-    inside: bool
-    distance_m: float
-    closest_point: XY
-    segment_index: int
-    tangent_unit: XY
-    inward_normal_unit: XY
+from geofence_manager.common_data import BoundaryContext, Point2D, INVALID_DISTANCE_M
 
 
 class GeofenceManagerNode(Node):
@@ -128,7 +114,7 @@ class GeofenceManagerNode(Node):
 
         self._zone_name: str = ""
         self._polygon_frame_id: str = self._world_frame
-        self._polygon_xy: List[XY] = []
+        self._polygon_xy: List[Point2D] = []
 
         self._last_pose_x: Optional[float] = None
         self._last_pose_y: Optional[float] = None
@@ -218,7 +204,7 @@ class GeofenceManagerNode(Node):
         if not self._geofence_file:
             raise ValueError("Parameter 'geofence_file' must not be empty.")
 
-        geofence = load_geofence_from_yaml(self._geofence_file)
+        geofence = load_geofence(self._geofence_file)
 
         self._zone_name = geofence.name
         self._polygon_frame_id = geofence.frame_id or self._world_frame
@@ -301,7 +287,7 @@ class GeofenceManagerNode(Node):
         point_msg.header.frame_id = self._polygon_frame_id
         point_msg.point.x = float(ctx.closest_point[0])
         point_msg.point.y = float(ctx.closest_point[1])
-        point_msg.point.z = 0.0
+        point_msg.point.z = self._markers_offset_z
         self._nearest_boundary_point_pub.publish(point_msg)
 
         dist_msg = Float32()
@@ -683,7 +669,7 @@ class GeofenceManagerNode(Node):
         self._marker_pub.publish(marker_array)
 
 
-    def _closed_polygon_xy(self) -> Sequence[XY]:
+    def _closed_polygon_xy(self) -> Sequence[Point2D]:
         if not self._polygon_xy:
             return []
 

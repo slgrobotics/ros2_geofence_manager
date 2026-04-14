@@ -6,10 +6,10 @@ from typing import Iterable, List, Sequence, Tuple
 import math
 
 
-XY = Tuple[float, float]
+Point2D = Tuple[float, float]
 
 
-def point_in_polygon(x: float, y: float, polygon: Sequence[XY]) -> bool:
+def point_in_polygon(x: float, y: float, polygon: Sequence[Point2D]) -> bool:
     """
     Ray-casting point-in-polygon test.
 
@@ -40,7 +40,7 @@ def point_in_polygon(x: float, y: float, polygon: Sequence[XY]) -> bool:
     return inside
 
 
-def distance_to_polygon_edges(x: float, y: float, polygon: Sequence[XY]) -> float:
+def distance_to_polygon_edges(x: float, y: float, polygon: Sequence[Point2D]) -> float:
     """
     Minimum Euclidean distance from a point to polygon boundary.
     """
@@ -59,7 +59,7 @@ def distance_to_polygon_edges(x: float, y: float, polygon: Sequence[XY]) -> floa
     return min_dist
 
 
-def closest_point_on_polygon(x: float, y: float, polygon: Sequence[XY]) -> XY:
+def closest_point_on_polygon(x: float, y: float, polygon: Sequence[Point2D]) -> Point2D:
     """
     Closest point on the polygon boundary to the given point.
     """
@@ -89,7 +89,7 @@ def _closest_point_on_segment(
     y1: float,
     x2: float,
     y2: float,
-) -> XY:
+) -> Point2D:
     dx = x2 - x1
     dy = y2 - y1
 

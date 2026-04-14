@@ -8,15 +8,7 @@ from typing import List, Tuple
 
 import yaml
 
-
-XY = Tuple[float, float]
-
-
-@dataclass
-class GeofenceDefinition:
-    name: str
-    frame_id: str
-    points: List[XY]
+from geofence_manager.common_data import GeofenceDefinition, Point2D
 
 
 def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
@@ -55,7 +47,7 @@ def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
     if not isinstance(raw_points, list):
         raise ValueError("'geofence.points' must be a list.")
 
-    points: List[XY] = []
+    points: List[Point2D] = []
     for i, item in enumerate(raw_points):
         if not isinstance(item, dict):
             raise ValueError(f"Point {i} must be a mapping like {{x: ..., y: ...}}.")

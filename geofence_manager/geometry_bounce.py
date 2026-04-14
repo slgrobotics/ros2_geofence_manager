@@ -15,7 +15,7 @@ from geofence_manager.geometry_utils import point_in_polygon
 #
 # -- Test it:
 # cd ~/robot_ws/src/ros2_geofence_manager/test
-# ./test_bounce.py --yaml ../config/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30
+# ./test_bounce.py --yaml ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
 #
 # `geometry_bounce.py` is a pure-geometry helper module for generating an interior “bounce” target when a robot approaches a geofence boundary.
 #
@@ -81,31 +81,10 @@ from geofence_manager.geometry_utils import point_in_polygon
 # In short, this module provides the geometric foundation for “bounce off the boundary and continue moving safely inside the allowed area.”
 # ---------------------------------------------------------------------------------------------
 
-XY = Tuple[float, float]
-EPS = 1e-9
+from geofence_manager.common_data import Point2D, BoundaryHit, BounceTargetResult, EPS
 
 
-@dataclass
-class BoundaryHit:
-    closest_point: XY
-    segment_index: int
-    tangent_unit: XY
-    inward_normal_unit: XY
-    distance_m: float
-
-
-@dataclass
-class BounceTargetResult:
-    success: bool
-    target_point: XY
-    boundary_point: XY
-    far_boundary_point: XY
-    travel_direction_unit: XY
-    segment_index: int
-    used_recovery_mode: bool
-    reason: str
-
-def compute_nearest_boundary_hit(robot_xy: XY, polygon: Sequence[XY]) -> BoundaryHit:
+def compute_nearest_boundary_hit(robot_xy: Point2D, polygon: Sequence[Point2D]) -> BoundaryHit:
     """
     Find the nearest point on the polygon boundary and return local boundary geometry.
 
@@ -125,7 +104,7 @@ def compute_nearest_boundary_hit(robot_xy: XY, polygon: Sequence[XY]) -> Boundar
     rx, ry = robot_xy
 
     best_dist_sq = float("inf")
-    best_point: Optional[XY] = None
+    best_point: Optional[Point2D] = None
     best_segment_index = -1
     best_tangent = (0.0, 0.0)
     best_inward_normal = (0.0, 0.0)
@@ -170,8 +149,8 @@ def compute_nearest_boundary_hit(robot_xy: XY, polygon: Sequence[XY]) -> Boundar
 
 
 def compute_bounce_target(
-    robot_xy: XY,
-    polygon: Sequence[XY],
+    robot_xy: Point2D,
+    polygon: Sequence[Point2D],
     bounce_angle_deg: float = 0.0,
     start_inset_m: float = 0.25,
     goal_inset_m: float = 0.50,
@@ -304,7 +283,7 @@ def compute_bounce_target(
     )
 
 
-def polygon_signed_area(polygon: Sequence[XY]) -> float:
+def polygon_signed_area(polygon: Sequence[Point2D]) -> float:
     area2 = 0.0
     n = len(polygon)
     for i in range(n):
@@ -314,7 +293,7 @@ def polygon_signed_area(polygon: Sequence[XY]) -> float:
     return 0.5 * area2
 
 
-def normalize(v: XY) -> XY:
+def normalize(v: Point2D) -> Point2D:
     x, y = v
     norm = math.hypot(x, y)
     if norm < EPS:
@@ -322,12 +301,12 @@ def normalize(v: XY) -> XY:
     return (x / norm, y / norm)
 
 
-def left_normal(v: XY) -> XY:
+def left_normal(v: Point2D) -> Point2D:
     x, y = v
     return (-y, x)
 
 
-def right_normal(v: XY) -> XY:
+def right_normal(v: Point2D) -> Point2D:
     x, y = v
     return (y, -x)
 
@@ -356,10 +335,10 @@ def closest_point_on_segment_with_t(
 
 
 def ray_polygon_intersections(
-    ray_origin: XY,
-    ray_dir_unit: XY,
-    polygon: Sequence[XY],
-) -> List[Tuple[float, XY, int]]:
+    ray_origin: Point2D,
+    ray_dir_unit: Point2D,
+    polygon: Sequence[Point2D],
+) -> List[Tuple[float, Point2D, int]]:
     """
     Return forward intersections between a ray and polygon edges.
 
@@ -373,7 +352,7 @@ def ray_polygon_intersections(
     ox, oy = ray_origin
     dx, dy = ray_dir_unit
 
-    hits: List[Tuple[float, XY, int]] = []
+    hits: List[Tuple[float, Point2D, int]] = []
     n = len(polygon)
 
     for i in range(n):
@@ -405,8 +384,8 @@ def ray_polygon_intersections(
     return hits
 
 
-def deduplicate_hits(hits: List[Tuple[float, XY, int]], tol: float = 1e-6) -> List[Tuple[float, XY, int]]:
-    deduped: List[Tuple[float, XY, int]] = []
+def deduplicate_hits(hits: List[Tuple[float, Point2D, int]], tol: float = 1e-6) -> List[Tuple[float, Point2D, int]]:
+    deduped: List[Tuple[float, Point2D, int]] = []
     for hit in sorted(hits, key=lambda h: h[0]):
         _, pt, _ = hit
         if not deduped:
@@ -420,5 +399,5 @@ def deduplicate_hits(hits: List[Tuple[float, XY, int]], tol: float = 1e-6) -> Li
     return deduped
 
 
-def cross2d(a: XY, b: XY) -> float:
+def cross2d(a: Point2D, b: Point2D) -> float:
     return a[0] * b[1] - a[1] * b[0]
