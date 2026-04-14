@@ -9,17 +9,17 @@ EPS = 1e-9
 EARTH_RADIUS_M = 6378137.0
 
 @dataclass
-class LocalFrameDefinition:
-    origin_lat_deg: float
-    origin_lon_deg: float
-    reference_frame: str = "local_cartesian"
+class GeofenceDefinition:
+    zone_name: str
+    points: List[Point2D]
+    reference_frame: str = "local_cartesian"  # e.g. "local_cartesian" or "wgs84", to keep track of the frame the polygon is defined in
 
 
 @dataclass
-class GeofenceDefinition:
-    zone_name: str
-    reference_frame: str
-    points: List[Point2D]
+class LocalFrameDefinition:
+    origin_lat_deg: float
+    origin_lon_deg: float
+    frame_id: str = "map"  # e.g. "map" or "odom", to keep track of the frame the local polygon is defined in
 
 
 @dataclass

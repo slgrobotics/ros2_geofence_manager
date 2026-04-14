@@ -113,7 +113,7 @@ class GeofenceManagerNode(Node):
         self.get_logger().info(f"use_sim_time: {use_sim_time}")
 
         self._zone_name: str = ""
-        self._polygon_frame_id: str = self._world_frame
+        self._polygon_frame_id: str = self._world_frame  # to keep track of the frame the polygon is defined in, hopefully "map" or "odom"
         self._polygon_xy: List[Point2D] = []
 
         self._last_pose_x: Optional[float] = None
@@ -194,7 +194,7 @@ class GeofenceManagerNode(Node):
 
         self.get_logger().info(
             f"geofence_manager started | file='{self._geofence_file}' | "
-            f"zone='{self._zone_name}' | frame='{self._polygon_frame_id}' | "
+            f"zone='{self._zone_name}' | zone_frame_id='{self._polygon_frame_id}' | "
             f"points={len(self._polygon_xy)} | pose_topic='{self._pose_topic}' | "
             f"pose_source_type='{self._pose_source_type}'"
         )
@@ -204,19 +204,19 @@ class GeofenceManagerNode(Node):
         if not self._geofence_file:
             raise ValueError("Parameter 'geofence_file' must not be empty.")
 
-        geofence, local_frame = load_geofence_as_local_cartesian(self._geofence_file)
+        geofence, local_frame = load_geofence_as_local_cartesian(self._geofence_file, frame_id=self._world_frame)
 
         self.get_logger().info("\n=== Geofence Loaded ===")
         self.get_logger().info(f"file:            {self._geofence_file}")
         self.get_logger().info(f"zone_name:       {geofence.zone_name}")
         self.get_logger().info(f"reference_frame: {geofence.reference_frame}")
-        self.get_logger().info(f"num points:      {len(geofence.points)}")
         if local_frame is not None:
             self.get_logger().info(
                 f"local origin (lat, lon): "
-                f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f})"
+                f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f}) "
+                f"frame_id: {local_frame.frame_id}"
             )
-
+        self.get_logger().info(f"num points:      {len(geofence.points)}")
         # Print first few points for sanity
         for i, p in enumerate(geofence.points[:10]):
             self.get_logger().info(f"  pt[{i}]: {p}")
@@ -233,7 +233,7 @@ class GeofenceManagerNode(Node):
         self.get_logger().info("\n========================")
 
         self._zone_name = geofence.zone_name
-        self._polygon_frame_id = geofence.reference_frame
+        self._polygon_frame_id = local_frame.frame_id if local_frame is not None else self._world_frame
         self._polygon_xy = list(geofence.points)
 
         if len(self._polygon_xy) < 3:

@@ -228,20 +228,21 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_sigint)
 
     geofence_file_path = Path(args.file)
-    geofence, local_frame = load_geofence_as_local_cartesian(str(geofence_file_path))
+    geofence, local_frame = load_geofence_as_local_cartesian(str(geofence_file_path), frame_id="mmmap")
     polygon = list(geofence.points)
 
     print("\n=== Geofence Loaded ===")
     print(f"file:            {geofence_file_path}")
     print(f"zone_name:       {geofence.zone_name}")
     print(f"reference_frame: {geofence.reference_frame}")
-    print(f"num points:      {len(geofence.points)}")
     if local_frame is not None:
         print(
             f"local origin (lat, lon): "
-            f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f})"
+            f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f}) "
+            f"frame_id: {local_frame.frame_id}"
         )
 
+    print(f"num points:      {len(geofence.points)}")
     # Print first few points for sanity
     for i, p in enumerate(geofence.points[:5]):
         print(f"  pt[{i}]: {p}")
@@ -387,6 +388,18 @@ def main() -> int:
         draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, 125)
         draw_text(frame, f"bounce angle: {bounce_angle_deg:.1f} deg", 15, 150)
         draw_text(frame, "q: quit", 15, 175)
+
+        if local_frame is not None:
+            wgs84_zero = latlon_to_local_xy(
+                lat_deg=local_frame.origin_lat_deg,
+                lon_deg=local_frame.origin_lon_deg,
+                origin_lat_deg=local_frame.origin_lat_deg,
+                origin_lon_deg=local_frame.origin_lon_deg,
+            )
+            wgs84_zero_on_image = world_to_image(wgs84_zero, bounds, frame.shape[1], frame.shape[0])
+
+            draw_text(frame, "+ (0,0) WGS84", wgs84_zero_on_image[0], wgs84_zero_on_image[1])
+
 
         cv2.imshow("Geofence Bounce Test", frame)
         key = cv2.waitKey(wait_ms) & 0xFF

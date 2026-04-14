@@ -44,7 +44,7 @@ def convert_wgs84_polygon_to_local(
     geofence_wgs84: GeofenceDefinition,
     origin_lat_deg: float | None = None,
     origin_lon_deg: float | None = None,
-    reference_frame: str = "local_cartesian",
+    frame_id: str = "map",
 ) -> tuple[GeofenceDefinition, LocalFrameDefinition]:
     """
     Convert a WGS84 geofence polygon into a local Cartesian frame.
@@ -82,16 +82,18 @@ def convert_wgs84_polygon_to_local(
             )
         )
 
+    # As converted to local reference frame, we can update the geofence definition accordingly.:
     local_geofence = GeofenceDefinition(
         zone_name=geofence_wgs84.zone_name,
-        reference_frame=reference_frame,
+        reference_frame=geofence_wgs84.reference_frame,  # keep the original reference frame in the geofence definition for downstream use if needed
         points=local_points,
     )
 
+    # And also return the local ("conversion") reference frame definition for downstream use if needed.
     local_frame = LocalFrameDefinition(
         origin_lat_deg=origin_lat_deg,
         origin_lon_deg=origin_lon_deg,
-        reference_frame=reference_frame,
+        frame_id=frame_id,
     )
 
     return local_geofence, local_frame
