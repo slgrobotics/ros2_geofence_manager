@@ -15,6 +15,8 @@ It supports:
 - QGroundControl (`*.plan`) geofences - defined in (lat,lon) terms
 - Proper *WGS84* → *ROS `map` frame* conversion using ROS services
 
+<img width="2033" height="783" alt="Screenshot from 2026-04-14 15-59-44" src="https://github.com/user-attachments/assets/e88da6c5-1119-4f84-943a-39b0a404e1b8" />
+
 ### Overview
 
 The `geofence_manager` node acts as a **geometry and safety layer** between localization and behavior.
@@ -37,6 +39,44 @@ It also provides services that higher-level logic (Behavior Trees, patrol manage
 - Inward-normal visualization
 - Bounce target computation (for wandering / recovery)
 - QGC `.plan` support with **ROS-consistent coordinate conversion**
+
+### Example Usage
+
+#### Build
+
+```
+mkdir -p ~/robot_ws/src
+cd ~/robot_ws/src
+git clone https://github.com/slgrobotics/ros2_geofence_manager.git
+cd ~/robot_ws
+colcon build
+```
+
+#### Test (stand-alone, GUI):
+```
+cd ~/robot_ws/src/ros2_geofence_manager/test
+./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
+  or
+./test_bounce.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10
+```
+
+<img width="998" height="1037" alt="Screenshot from 2026-04-14 16-01-42" src="https://github.com/user-attachments/assets/3bb79292-1dc0-4a61-ae9f-486f496ed484" />
+
+#### Node Launch
+
+```bash
+source /opt/ros/${ROS_DISTRO}/setup.bash
+cd ~/robot_ws
+colcon build
+source ~/robot_ws/install/setup.bash
+ros2 launch geofence_manager geofence.launch.py
+```
+
+With simulation time (and Dragger robot, see [this section](https://github.com/slgrobotics/robots_bringup/blob/main/Docs/ROS-Jazzy/README.md#bringing-up-robot-simulation-in-gazebo)):
+
+```bash
+ros2 launch geofence_manager geofence.launch.py use_sim_time:=true
+```
 
 ### Architecture
 
@@ -202,41 +242,6 @@ This ensures:
 
 - Geofence aligns exactly with `/odometry/global`
 - No drift or mismatch between GPS and geometry
-
-### Example Usage
-
-#### Build
-
-```
-mkdir -p ~/robot_ws/src
-cd ~/robot_ws/src
-git clone https://github.com/slgrobotics/ros2_geofence_manager.git
-cd ~/robot_ws
-colcon build
-```
-
-#### Test (stand-alone, GUI):
-```
-# cd ~/robot_ws/src/ros2_geofence_manager/test
-# ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
-# ./test_bounce.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10
-```
-
-#### Node Launch
-
-```bash
-source /opt/ros/${ROS_DISTRO}/setup.bash
-cd ~/robot_ws
-colcon build
-source ~/robot_ws/install/setup.bash
-ros2 launch geofence_manager geofence.launch.py
-```
-
-With simulation time (and Dragger robot, see [this section](https://github.com/slgrobotics/robots_bringup/blob/main/Docs/ROS-Jazzy/README.md#bringing-up-robot-simulation-in-gazebo)):
-
-```bash
-ros2 launch geofence_manager geofence.launch.py use_sim_time:=true
-```
 
 ### Dependencies
 
