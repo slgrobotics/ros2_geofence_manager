@@ -218,10 +218,10 @@ class GeofenceManagerNode(Node):
             )
 
         # Print first few points for sanity
-        for i, p in enumerate(geofence.points[:5]):
+        for i, p in enumerate(geofence.points[:10]):
             self.get_logger().info(f"  pt[{i}]: {p}")
 
-        if len(geofence.points) > 5:
+        if len(geofence.points) > 10:
             self.get_logger().info("  ...")
 
         # Compute bounds for visibility check
@@ -230,7 +230,7 @@ class GeofenceManagerNode(Node):
 
         self.get_logger().info(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
         self.get_logger().info(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
-        self.get_logger().info("========================\n")
+        self.get_logger().info("\n========================")
 
         self._zone_name = geofence.name
         self._polygon_frame_id = geofence.frame_id
