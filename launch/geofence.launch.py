@@ -13,8 +13,8 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg_share = get_package_share_directory("geofence_manager")
 
-    geofence_file = os.path.join(pkg_share, "plans", "geofence_polygon.yaml")
-    #geofence_file = os.path.join(pkg_share, "plans", "geofence-1.plan")
+    #geofence_file = os.path.join(pkg_share, "plans", "geofence_polygon.yaml")
+    geofence_file = os.path.join(pkg_share, "plans", "geofence_qgroundcontrol.plan")
 
     params_file = os.path.join(pkg_share, "config", "geofence_params.yaml")
 
