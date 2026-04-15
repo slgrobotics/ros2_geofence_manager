@@ -32,6 +32,11 @@ It continuously evaluates the robot pose relative to a polygon (geofence) and pu
 
 It also provides services that higher-level logic (Behavior Trees, patrol manager, recovery logic) can use.
 
+> **Note:** The idea is that a patrolling robot “bounces” off the boundaries of a geofence (well, a *geocage*). 
+> The `/geofence/compute_bounce_target` ([ComputeBounceTarget](https://github.com/slgrobotics/ros2_geofence_manager_interfaces/blob/main/srv/ComputeBounceTarget.srv)) service provides the next navigation target based on that implied behavior. 
+> The *patrol manager* node, for example, could use it and avoid planning overall.
+> Running the test tool is probably the easiest way to understand how it works in practice. 
+
 ### Key Features
 
 - Polygon-based geofence (convex or concave)
