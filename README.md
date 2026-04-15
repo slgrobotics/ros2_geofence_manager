@@ -236,13 +236,17 @@ Used for:
 - Wandering
 - Boundary recovery
 
-### QGC Integration Details
+### QGroundControl Integration Details
 
-The ROS-aware loader: `helpers/qgc_plan_loader_ros.py`
+[QGroundControl](https://qgroundcontrol.com/) is one of the widely available tools that allows creation of geofences and geocages ("*inclusion*" and "*exclusion*" zones): 
+
+<img width="2063" height="1144" alt="Screenshot from 2026-04-15 10-17-32" src="https://github.com/user-attachments/assets/7ea4b639-6617-4e41-aedc-c4a6226543ae" />
+
+This package contains a ROS-aware loader of QGC "*.plan*" files: `helpers/qgc_plan_loader_ros.py`
 
 Performs:
 
-1. Parse `.plan`
+1. Parse `.plan` [format](https://github.com/slgrobotics/ros2_geofence_manager/blob/main/plans/geofence_qgroundcontrol_multy.plan)
 2. Extract polygon (WGS84)
 3. Call `/fromLL` for each vertex
 4. Build `map`-frame polygon
