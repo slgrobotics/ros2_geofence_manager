@@ -3,68 +3,80 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
-from geofence_manager.helpers.common_data import GeofenceDefinition
-
-from geofence_manager.helpers.polygon_loader import load_geofence_from_yaml
-from geofence_manager.helpers.qgc_plan_loader import load_geofence_from_qgc_plan
-from geofence_manager.helpers.wgs84_to_local import (
-    LocalFrameDefinition,
-    convert_wgs84_polygon_to_local,
-)
+from geofence_manager.helpers.common_data import GeofenceCollection, LocalFrameDefinition
+from geofence_manager.helpers.polygon_loader import load_geofence_collection_from_yaml
+from geofence_manager.helpers.qgc_plan_loader import load_geofence_collection_from_qgc_plan
+from geofence_manager.helpers.wgs84_to_local import convert_wgs84_collection_to_local
 
 
-def load_geofence(file_path: str) -> GeofenceDefinition:
+_LOADER_BY_SUFFIX: dict[str, Callable[[str], GeofenceCollection]] = {
+    ".yaml": load_geofence_collection_from_yaml,
+    ".yml": load_geofence_collection_from_yaml,
+    ".plan": load_geofence_collection_from_qgc_plan,
+}
 
-    # ----------------------------------------------------------
-    # Load a geofence definition from a supported file type.
-    #
-    # Supported formats:
-    # - .yaml / .yml  -> simple YAML polygon format
-    # - .plan         -> QGroundControl plan file
-    #
-    # Returns:
-    #     GeofenceDefinition
-    #
-    # Raises:
-    #     FileNotFoundError:
-    #         If the file does not exist.
-    #     ValueError:
-    #         If the file extension is unsupported or the file content is invalid.
-    # ----------------------------------------------------------
 
+def load_geofence(file_path: str) -> GeofenceCollection:
+    """
+    Load a geofence collection from a supported file type.
+
+    Supported formats:
+    - .yaml / .yml  -> local Cartesian geofence collection
+    - .plan         -> QGroundControl geofence collection in WGS84
+
+    Returns:
+        GeofenceCollection
+
+    Raises:
+        FileNotFoundError:
+            If the file does not exist.
+        ValueError:
+            If the file extension is unsupported or the content is invalid.
+    """
     path = Path(file_path)
     if not path.is_file():
         raise FileNotFoundError(f"Geofence file not found: '{file_path}'")
 
     suffix = path.suffix.lower()
+    loader = _LOADER_BY_SUFFIX.get(suffix)
+    if loader is None:
+        supported = ", ".join(sorted(_LOADER_BY_SUFFIX.keys()))
+        raise ValueError(
+            f"Unsupported geofence file extension '{suffix}' for file '{file_path}'. "
+            f"Supported extensions: {supported}"
+        )
 
-    if suffix in (".yaml", ".yml"):
-        return load_geofence_from_yaml(str(path))
-
-    if suffix == ".plan":
-        return load_geofence_from_qgc_plan(str(path))
-
-    raise ValueError(
-        f"Unsupported geofence file extension '{suffix}' for file '{file_path}'. "
-        f"Supported extensions: .yaml, .yml, .plan"
-    )
+    return loader(str(path))
 
 
 def load_geofence_as_local_cartesian(
     file_path: str,
-    frame_id: str = "map",
-) -> tuple[GeofenceDefinition, LocalFrameDefinition | None]:
+    frame_id: str = "local_cartesian",
+) -> tuple[GeofenceCollection, LocalFrameDefinition | None]:
     """
-    Load a geofence and convert WGS84 input to a local Cartesian frame.
+    Load a geofence collection and, if needed, convert WGS84 geometry into a
+    local Cartesian frame.
 
-    Returns:
-      - GeofenceDefinition
-      - LocalFrameDefinition if conversion from WGS84 was performed, else None
+    Intended for:
+    - testing
+    - visualization
+    - standalone geometry experiments
+
+    Not intended for:
+    - live ROS map-aligned runtime use with GPS
+
+    For live ROS use, a QGC .plan should be converted with ROS-aware services
+    (e.g. fromLL / toLL) so the resulting geometry is truly aligned with the
+    robot's world frame.
     """
     geofence = load_geofence(file_path)
 
     if geofence.reference_frame.lower() == "wgs84":
-        return convert_wgs84_polygon_to_local(geofence, frame_id=frame_id)
+        return convert_wgs84_collection_to_local(
+            geofence_wgs84=geofence,
+            frame_id=frame_id,
+        )
 
     return geofence, None

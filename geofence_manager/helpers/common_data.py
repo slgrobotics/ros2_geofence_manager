@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import List, Tuple
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple, Literal
 
 
 Point2D = Tuple[float, float]  # (x, y) in a local Cartesian frame, or (lat, lon) in WGS84 depending on context.
@@ -8,11 +8,45 @@ INVALID_DISTANCE_M = -1.0
 EPS = 1e-9
 EARTH_RADIUS_M = 6378137.0
 
+
 @dataclass
-class GeofenceDefinition:
+class GeofenceZonePolygon:
     zone_name: str
     points: List[Point2D]
+    inclusion: bool
     reference_frame: str = "local_cartesian"  # e.g. "local_cartesian" or "wgs84", to keep track of the frame the polygon is defined in
+
+
+@dataclass
+class GeofenceZoneCircle:
+    zone_name: str
+    center: Point2D
+    radius_m: float
+    inclusion: bool
+    reference_frame: str = "local_cartesian"
+
+
+@dataclass
+class BreachReturnPoint:
+    point: Point2D
+    altitude_m: float
+    reference_frame: str = "wgs84"
+
+
+@dataclass
+class GeofenceCollection:
+    source_name: str
+    reference_frame: str
+    polygons: List[GeofenceZonePolygon] = field(default_factory=list)
+    circles: List[GeofenceZoneCircle] = field(default_factory=list)
+    breach_return: Optional[BreachReturnPoint] = None
+
+
+# @dataclass
+# class GeofenceDefinition:
+#     zone_name: str
+#     points: List[Point2D]
+#     reference_frame: str = "local_cartesian"  # e.g. "local_cartesian" or "wgs84", to keep track of the frame the polygon is defined in
 
 
 @dataclass

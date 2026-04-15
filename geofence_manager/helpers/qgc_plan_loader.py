@@ -4,41 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
-from geofence_manager.helpers.common_data import GeofenceDefinition, Point2D
+from geofence_manager.helpers.common_data import (
+    BreachReturnPoint,
+    GeofenceCollection,
+    GeofenceZoneCircle,
+    GeofenceZonePolygon,
+)
 
 
-def load_geofence_from_qgc_plan(file_path: str) -> GeofenceDefinition:
-
-    # ----------------------------------------------------------
-    # Load a geofence polygon from a QGroundControl .plan file.
-
-    # Expected QGC structure:
-
-    # {
-    #   "fileType": "Plan",
-    #   "geoFence": {
-    #     "polygons": [
-    #       {
-    #         "inclusion": true,
-    #         "polygon": [
-    #           [lat, lon],
-    #           [lat, lon],
-    #           ...
-    #         ]
-    #       }
-    #     ]
-    #   }
-    # }
-    #
-    # Notes:
-    # - Returns the first inclusion polygon found.
-    # - Points are returned as (lat, lon).
-    # - reference_frame is set to "wgs84".
-    # - zone_name defaults to the file stem.
-    # ----------------------------------------------------------
-
+def load_geofence_collection_from_qgc_plan(file_path: str) -> GeofenceCollection:
     path = Path(file_path)
     if not path.is_file():
         raise FileNotFoundError(f"QGC plan file not found: '{file_path}'")
@@ -49,53 +25,82 @@ def load_geofence_from_qgc_plan(file_path: str) -> GeofenceDefinition:
     if not isinstance(data, dict):
         raise ValueError("QGC plan file must contain a top-level JSON object.")
 
-    file_type = data.get("fileType")
-    if file_type != "Plan":
-        raise ValueError(f"Unsupported QGC fileType: {file_type!r}; expected 'Plan'.")
+    if data.get("fileType") != "Plan":
+        raise ValueError("QGC plan file must have fileType='Plan'.")
 
     geo_fence = data.get("geoFence")
     if not isinstance(geo_fence, dict):
         raise ValueError("QGC plan file does not contain a valid 'geoFence' object.")
 
-    polygons = geo_fence.get("polygons")
-    if not isinstance(polygons, list):
-        raise ValueError("QGC plan file does not contain a valid 'geoFence.polygons' list.")
-
-    selected_polygon = None
-    for i, poly in enumerate(polygons):
-        if not isinstance(poly, dict):
+    polygons: List[GeofenceZonePolygon] = []
+    for i, item in enumerate(geo_fence.get("polygons", [])):
+        if not isinstance(item, dict):
             continue
 
-        inclusion = poly.get("inclusion", False)
-        raw_polygon = poly.get("polygon")
+        raw_polygon = item.get("polygon")
+        inclusion = bool(item.get("inclusion", False))
 
-        if inclusion and isinstance(raw_polygon, list):
-            selected_polygon = raw_polygon
-            break
+        if not isinstance(raw_polygon, list):
+            continue
 
-    if selected_polygon is None:
-        raise ValueError("No inclusion geofence polygon found in QGC plan file.")
+        points = []
+        for j, pt in enumerate(raw_polygon):
+            if not isinstance(pt, list) or len(pt) < 2:
+                raise ValueError(f"Polygon {i} point {j} must be [lat, lon].")
+            points.append((float(pt[0]), float(pt[1])))
 
-    points: List[Point2D] = []
-    for i, item in enumerate(selected_polygon):
-        if not isinstance(item, list) or len(item) < 2:
-            raise ValueError(
-                f"QGC polygon point {i} must be a list like [lat, lon], got: {item!r}"
+        if len(points) < 3:
+            raise ValueError(f"Polygon {i} must contain at least 3 points.")
+
+        polygons.append(
+            GeofenceZonePolygon(
+                zone_name=f"polygon_{i}",
+                points=points,
+                inclusion=inclusion,
+                reference_frame="wgs84",
             )
+        )
 
-        try:
-            lat = float(item[0])
-            lon = float(item[1])
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"QGC polygon point {i} has invalid numeric values: {item!r}") from exc
+    circles: List[GeofenceZoneCircle] = []
+    for i, item in enumerate(geo_fence.get("circles", [])):
+        if not isinstance(item, dict):
+            continue
 
-        points.append((lat, lon))
+        raw_circle = item.get("circle")
+        inclusion = bool(item.get("inclusion", False))
 
-    if len(points) < 3:
-        raise ValueError("QGC geofence polygon must contain at least 3 points.")
+        if not isinstance(raw_circle, dict):
+            continue
 
-    return GeofenceDefinition(
-        zone_name=path.stem,
+        center = raw_circle.get("center")
+        radius = raw_circle.get("radius")
+
+        if not isinstance(center, list) or len(center) < 2:
+            raise ValueError(f"Circle {i} center must be [lat, lon].")
+
+        circles.append(
+            GeofenceZoneCircle(
+                zone_name=f"circle_{i}",
+                center=(float(center[0]), float(center[1])),
+                radius_m=float(radius),
+                inclusion=inclusion,
+                reference_frame="wgs84",
+            )
+        )
+
+    breach_return = None
+    raw_breach = geo_fence.get("breachReturn")
+    if isinstance(raw_breach, list) and len(raw_breach) >= 3:
+        breach_return = BreachReturnPoint(
+            point=(float(raw_breach[0]), float(raw_breach[1])),
+            altitude_m=float(raw_breach[2]),
+            reference_frame="wgs84",
+        )
+
+    return GeofenceCollection(
+        source_name=path.stem,
         reference_frame="wgs84",
-        points=points,
+        polygons=polygons,
+        circles=circles,
+        breach_return=breach_return,
     )

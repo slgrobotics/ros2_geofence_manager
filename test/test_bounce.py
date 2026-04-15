@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import List, Sequence, Tuple
 
 import cv2
-from matplotlib import image
 import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -30,6 +29,7 @@ from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cart
 # cd ~/robot_ws/src/ros2_geofence_manager/test
 # ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
 # ./test_bounce.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10
+# ./test_bounce.py --file ../plans/geofence_qgroundcontrol_multi.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10 --zone-name polygon_1
 #
 
 
@@ -49,6 +49,11 @@ def parse_args() -> argparse.Namespace:
         "--file",
         required=True,
         help="Path to geofence polygon YAML or QGroundControl PLAN file.",
+    )
+    parser.add_argument(
+        "--zone-name",
+        default="",
+        help="Name of polygon zone to test. Defaults to first inclusion polygon.",
     )
     parser.add_argument(
         "--x",
@@ -117,6 +122,23 @@ def parse_args() -> argparse.Namespace:
         help="Window height in pixels.",
     )
     return parser.parse_args()
+
+
+def select_test_polygon(collection, zone_name: str = ""):
+    if zone_name:
+        for poly in collection.polygons:
+            if poly.zone_name == zone_name:
+                return poly
+        raise ValueError(f"Polygon zone '{zone_name}' not found.")
+
+    for poly in collection.polygons:
+        if poly.inclusion:
+            return poly
+
+    if collection.polygons:
+        return collection.polygons[0]
+
+    raise ValueError("No polygon zones found in geofence collection.")
 
 
 def compute_bounds(points: Sequence[Point2D], margin_ratio: float = 0.1) -> Tuple[float, float, float, float]:
@@ -229,12 +251,13 @@ def main() -> int:
     signal.signal(signal.SIGINT, _handle_sigint)
 
     geofence_file_path = Path(args.file)
-    geofence, local_frame = load_geofence_as_local_cartesian(str(geofence_file_path), frame_id="mmmap")
-    polygon = list(geofence.points)
+    geofence, local_frame = load_geofence_as_local_cartesian(str(geofence_file_path), frame_id="map")
 
-    print("\n=== Geofence Loaded ===")
+    selected_polygon = select_test_polygon(geofence, args.zone_name)
+
+    print("\n=== Geofence Collection Loaded ===")
     print(f"file:            {geofence_file_path}")
-    print(f"zone_name:       {geofence.zone_name}")
+    print(f"source_name:     {geofence.source_name}")
     print(f"reference_frame: {geofence.reference_frame}")
     if local_frame is not None:
         print(
@@ -242,18 +265,23 @@ def main() -> int:
             f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f}) "
             f"frame_id: {local_frame.frame_id}"
         )
+    print(f"num polygons:    {len(geofence.polygons)}")
+    print(f"num circles:     {len(geofence.circles)}")
 
-    print(f"num points:      {len(geofence.points)}")
-    # Print first few points for sanity
-    for i, p in enumerate(geofence.points[:5]):
+    print("\n=== Selected Polygon ===")
+    print(f"zone_name:       {selected_polygon.zone_name}")
+    print(f"inclusion:       {selected_polygon.inclusion}")
+    print(f"reference_frame: {selected_polygon.reference_frame}")
+    print(f"num points:      {len(selected_polygon.points)}")
+    for i, p in enumerate(selected_polygon.points[:5]):
         print(f"  pt[{i}]: {p}")
 
-    if len(geofence.points) > 5:
+    if len(selected_polygon.points) > 5:
         print("  ...")
 
     # Compute bounds for visibility check
-    xs = [p[0] for p in geofence.points]
-    ys = [p[1] for p in geofence.points]
+    xs = [p[0] for p in selected_polygon.points]
+    ys = [p[1] for p in selected_polygon.points]
 
     print(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
     print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
@@ -274,7 +302,7 @@ def main() -> int:
     else:
         robot_xy = (args.x, args.y)
 
-    polygon: List[Point2D] = list(geofence.points)
+    polygon: List[Point2D] = list(selected_polygon.points)
 
     if len(polygon) < 3:
         print("Polygon must contain at least 3 points.", file=sys.stderr)
@@ -284,7 +312,7 @@ def main() -> int:
 
     print(f"Initial robot position: ({robot_xy[0]:.6f}, {robot_xy[1]:.6f})")
 
-    inside = point_in_polygon(robot_xy[0], robot_xy[1], geofence.points)
+    inside = point_in_polygon(robot_xy[0], robot_xy[1], selected_polygon.points)
     print(f"Initial inside polygon: {inside}")
 
     trail: List[Point2D] = [robot_xy]
@@ -382,8 +410,8 @@ def main() -> int:
             draw_line(frame, bounce_dbg.boundary_point, bounce_dbg.far_boundary_point, bounds, (120, 120, 120), 1)
             draw_line(frame, robot_xy, bounce_dbg.target_point, bounds, (0, 180, 255), 1)
 
-        draw_text(frame, f"zone name: {geofence.zone_name}", 15, 25)
-        draw_text(frame, f"ref frame: {geofence.reference_frame}", 15, 50)
+        draw_text(frame, f"zone name: {selected_polygon.zone_name}", 15, 25)
+        draw_text(frame, f"ref frame: {selected_polygon.reference_frame}", 15, 50)
         draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, 75)
         draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, 100)
         draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, 125)
@@ -391,16 +419,9 @@ def main() -> int:
         draw_text(frame, "q: quit", 15, 175)
 
         if local_frame is not None:
-            wgs84_zero = latlon_to_local_xy(
-                lat_deg=local_frame.origin_lat_deg,
-                lon_deg=local_frame.origin_lon_deg,
-                origin_lat_deg=local_frame.origin_lat_deg,
-                origin_lon_deg=local_frame.origin_lon_deg,
-            )
-            wgs84_zero_on_image = world_to_image(wgs84_zero, bounds, frame.shape[1], frame.shape[0])
-
-            draw_text(frame, "+ (0,0) WGS84", wgs84_zero_on_image[0], wgs84_zero_on_image[1])
-
+            local_origin = (0.0, 0.0)
+            local_origin_px = world_to_image(local_origin, bounds, frame.shape[1], frame.shape[0])
+            draw_text(frame, "+ (0,0) WGS84", local_origin_px[0], local_origin_px[1])
 
         cv2.imshow("Geofence Bounce Test", frame)
         key = cv2.waitKey(wait_ms) & 0xFF

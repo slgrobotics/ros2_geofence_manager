@@ -8,10 +8,10 @@ from typing import List, Tuple
 
 import yaml
 
-from geofence_manager.helpers.common_data import GeofenceDefinition, Point2D
+from geofence_manager.helpers.common_data import GeofenceCollection, Point2D
 
 
-def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
+def load_geofence_collection_from_yaml(file_path: str) -> GeofenceCollection:
     """
     Load a simple geofence polygon from YAML.
 
@@ -66,7 +66,7 @@ def load_geofence_from_yaml(file_path: str) -> GeofenceDefinition:
     if len(points) < 3:
         raise ValueError("Geofence polygon must contain at least 3 points.")
 
-    return GeofenceDefinition(
+    return GeofenceCollection(
         zone_name=zone_name,
         reference_frame=reference_frame,
         points=points,

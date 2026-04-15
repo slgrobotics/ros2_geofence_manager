@@ -10,7 +10,7 @@ from geographic_msgs.msg import GeoPoint
 from geometry_msgs.msg import Point
 
 from geofence_manager.helpers.common_data import (
-    GeofenceDefinition,
+    GeofenceCollection,
     LocalFrameDefinition,
     Point2D,
 )
@@ -25,13 +25,13 @@ def load_geofence_from_qgc_plan_ros(
     to_service_name: str = "/toLL",
     frame_id: str = "map",
     timeout_sec: float = 5.0,
-) -> tuple[GeofenceDefinition, LocalFrameDefinition]:
+) -> tuple[GeofenceCollection, LocalFrameDefinition]:
     """
     Load a QGroundControl .plan geofence and convert it into ROS Cartesian coordinates
     using robot_localization/navsat_transform_node services.
 
     Returns:
-        - GeofenceDefinition with points in ROS map/world Cartesian coordinates
+        - GeofenceCollection with points in ROS map/world Cartesian coordinates
         - LocalFrameDefinition describing the WGS84 location of (0, 0) in that frame
     """
     geofence_wgs84 = load_geofence_from_qgc_plan(file_path)
@@ -81,7 +81,7 @@ def load_geofence_from_qgc_plan_ros(
 
 
     # As converted to local reference frame, we can update the geofence definition accordingly.:
-    local_geofence = GeofenceDefinition(
+    local_geofence = GeofenceCollection(
         zone_name=geofence_wgs84.zone_name,
         reference_frame=geofence_wgs84.reference_frame.lower(),  # keep the original reference frame in the geofence definition for downstream use if needed
         points=local_points,
