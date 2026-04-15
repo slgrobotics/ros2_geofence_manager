@@ -27,7 +27,11 @@ from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cart
 
 #
 # cd ~/robot_ws/src/ros2_geofence_manager/test
+#     using custom YAML format with local Cartesian input:
 # ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
+# ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10 --zone-name home_area
+#
+#      using QGroundControl .plan files with WGS84 lat/lon input:
 # ./test_bounce.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10
 # ./test_bounce.py --file ../plans/geofence_qgroundcontrol_multi.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10 --zone-name polygon_1
 #
@@ -253,8 +257,6 @@ def main() -> int:
     geofence_file_path = Path(args.file)
     geofence, local_frame = load_geofence_as_local_cartesian(str(geofence_file_path), frame_id="map")
 
-    selected_polygon = select_test_polygon(geofence, args.zone_name)
-
     print("\n=== Geofence Collection Loaded ===")
     print(f"file:            {geofence_file_path}")
     print(f"source_name:     {geofence.source_name}")
@@ -265,8 +267,43 @@ def main() -> int:
             f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f}) "
             f"frame_id: {local_frame.frame_id}"
         )
-    print(f"num polygons:    {len(geofence.polygons)}")
-    print(f"num circles:     {len(geofence.circles)}")
+
+    if geofence.polygons:
+        print(f"\n--- Polygons: {len(geofence.polygons)} ---")
+        for poly in geofence.polygons:
+            print(
+                f"  {poly.zone_name:20s} "
+                f"inclusion={str(poly.inclusion):5s} "
+                f"points={len(poly.points)}"
+            )
+    else:
+        print("\n--- Polygons:  (none)")
+
+
+    if geofence.circles:
+        print(f"\n--- Circles: {len(geofence.circles)} ---")
+        for circle in geofence.circles:
+            print(
+                f"  {circle.zone_name:20s} "
+                f"inclusion={str(circle.inclusion):5s} "
+                f"radius={circle.radius_m:.3f}"
+            )
+    else:
+        print("\n--- Circles: (none)")
+
+    # Optional: breach return
+    if geofence.breach_return is not None:
+        print("\n--- Breach Return ---")
+        print(
+            f"  point={geofence.breach_return.point} "
+            f"altitude_m={geofence.breach_return.altitude_m:.2f}"
+        )
+    else:
+        print("\n--- Breach Return: (none)")
+
+
+    selected_polygon = select_test_polygon(geofence, args.zone_name)
+    polygon_type = "Inclusion" if selected_polygon.inclusion else "Exclusion"
 
     print("\n=== Selected Polygon ===")
     print(f"zone_name:       {selected_polygon.zone_name}")
@@ -314,6 +351,12 @@ def main() -> int:
 
     inside = point_in_polygon(robot_xy[0], robot_xy[1], selected_polygon.points)
     print(f"Initial inside polygon: {inside}")
+
+    if not selected_polygon.inclusion and not inside:
+        print(
+            "\nWARNING: Selected zone is an exclusion polygon and the robot starts outside it.\n"
+            "         Bounce target is not meaningful in this case.\n"
+        )
 
     trail: List[Point2D] = [robot_xy]
 
@@ -410,13 +453,14 @@ def main() -> int:
             draw_line(frame, bounce_dbg.boundary_point, bounce_dbg.far_boundary_point, bounds, (120, 120, 120), 1)
             draw_line(frame, robot_xy, bounce_dbg.target_point, bounds, (0, 180, 255), 1)
 
-        draw_text(frame, f"zone name: {selected_polygon.zone_name}", 15, 25)
+        draw_text(frame, f"zone name: {selected_polygon.zone_name} type: {polygon_type}", 15, 25)
         draw_text(frame, f"ref frame: {selected_polygon.reference_frame}", 15, 50)
-        draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, 75)
-        draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, 100)
-        draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, 125)
-        draw_text(frame, f"bounce angle: {bounce_angle_deg:.1f} deg", 15, 150)
-        draw_text(frame, "q: quit", 15, 175)
+        draw_text(frame, "q: quit", frame.shape[0] - 125, frame.shape[1] - 25)
+
+        draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, frame.shape[1] - 75)
+        draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, frame.shape[1] - 50)
+        draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, frame.shape[1] - 25)
+        draw_text(frame, f"bounce angle: {bounce_angle_deg:.1f} deg", 300, frame.shape[1] - 25)
 
         if local_frame is not None:
             local_origin = (0.0, 0.0)

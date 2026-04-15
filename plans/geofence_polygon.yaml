@@ -1,8 +1,35 @@
 geofence:
-  zone_name: home_area
+  source_name: home_geofence
   reference_frame: local_cartesian
-  points:
-    - {x: -3.5, y: -3.5}
-    - {x: -3.5, y: 3.5}
-    - {x: 3.5, y: 3.5}
-    - {x: 3.5, y: -3.5}
+
+  polygons:
+    - zone_name: home_area
+      inclusion: true
+      points:
+        - {x: -3.5, y: -3.5}
+        - {x: -3.5, y:  3.5}
+        - {x:  3.5, y:  3.5}
+        - {x:  3.5, y: -3.5}
+
+    - zone_name: pond_exclusion
+      inclusion: false
+      points:
+        - {x: -0.8, y: -0.5}
+        - {x: -0.2, y: -0.6}
+        - {x:  0.0, y:  0.1}
+        - {x: -0.7, y:  0.2}
+
+  circles:
+    - zone_name: tree_keepout
+      inclusion: false
+      center: {x: 2.0, y: 1.0}
+      radius_m: 0.75
+
+    - zone_name: docking_area
+      inclusion: true
+      center: {x: -2.0, y: 2.0}
+      radius_m: 1.0
+
+  breach_return:
+    point: {x: 0.0, y: 0.0}
+    altitude_m: 0.0
