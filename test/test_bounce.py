@@ -29,6 +29,7 @@ from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cart
 #
 # cd ~/robot_ws/src/ros2_geofence_manager/test
 # ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
+# ./test_bounce.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10
 #
 
 
