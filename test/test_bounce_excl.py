@@ -282,6 +282,10 @@ def draw_cross(
     cv2.line(image, (px, py - size), (px, py + size), color, thickness)
 
 
+def zone_color(inclusion: bool) -> Tuple[int, int, int]:
+    return (0, 200, 0) if inclusion else (0, 0, 200)
+
+
 def main() -> int:
     global _RUNNING
 
@@ -470,24 +474,19 @@ def main() -> int:
 
         frame = np.zeros((args.height, args.width, 3), dtype=np.uint8)
 
-        # Draw all polygons
+        # Draw all polygons - inclusion and exclusion
         for poly in geofence.polygons:
-            color = (200, 200, 200) if poly.inclusion else (0, 0, 255)
-            draw_polygon(frame, poly.points, bounds, color=color, thickness=2)
+            draw_polygon(frame, poly.points, bounds, color=zone_color(poly.inclusion), thickness=2)
 
         # Draw circles
         for circle in geofence.circles:
-            color = (200, 200, 200) if circle.inclusion else (0, 0, 255)
-            draw_circle(frame, circle.center, circle.radius_m, bounds, color=color, thickness=2)
+            draw_circle(frame, circle.center, circle.radius_m, bounds, color=zone_color(circle.inclusion), thickness=2)
 
         # Draw breach return
         if geofence.breach_return is not None:
             draw_cross(frame, geofence.breach_return.point, bounds, color=(255, 255, 255), size=8, thickness=2)
             bx, by = world_to_image(geofence.breach_return.point, bounds, frame.shape[1], frame.shape[0])
             draw_text(frame, "BreachReturn", bx + 8, by - 8)
-
-        for exclusion in exclusion_polygons:
-            draw_polygon(frame, exclusion, bounds, color=(0, 0, 255), thickness=2)
 
         if len(trail) >= 2:
             for i in range(1, len(trail)):

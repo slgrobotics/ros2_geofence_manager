@@ -23,11 +23,11 @@ geofence:
     - zone_name: tree_keepout
       inclusion: false
       center: {x: 2.0, y: 1.0}
-      radius_m: 0.75
+      radius_m: 0.5
 
     - zone_name: docking_area
       inclusion: true
-      center: {x: -2.0, y: 2.0}
+      center: {x: -3.5, y: 3.5}
       radius_m: 1.0
 
   breach_return:
