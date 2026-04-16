@@ -205,10 +205,10 @@ def draw_text(image: np.ndarray, text: str, x: int, y: int) -> None:
         text,
         (x, y),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (220, 220, 220),
-        1,
-        cv2.LINE_AA,
+        fontScale=0.7,
+        color=(220, 220, 220),
+        thickness=1,
+        lineType=cv2.LINE_AA,
     )
 
 
@@ -284,6 +284,81 @@ def draw_cross(
 
 def zone_color(inclusion: bool) -> Tuple[int, int, int]:
     return (0, 200, 0) if inclusion else (0, 0, 200)
+
+
+def polygon_signed_area(polygon: Sequence[Point2D]) -> float:
+    area2 = 0.0
+    n = len(polygon)
+    for i in range(n):
+        x1, y1 = polygon[i]
+        x2, y2 = polygon[(i + 1) % n]
+        area2 += x1 * y2 - x2 * y1
+    return 0.5 * area2
+
+
+def left_normal(v: Point2D) -> Point2D:
+    x, y = v
+    return (-y, x)
+
+
+def right_normal(v: Point2D) -> Point2D:
+    x, y = v
+    return (y, -x)
+
+
+def longest_edge_index(polygon: Sequence[Point2D]) -> int:
+    best_i = 0
+    best_len = -1.0
+    n = len(polygon)
+    for i in range(n):
+        ax, ay = polygon[i]
+        bx, by = polygon[(i + 1) % n]
+        d = math.hypot(bx - ax, by - ay)
+        if d > best_len:
+            best_len = d
+            best_i = i
+    return best_i
+
+
+def compute_polygon_label_point(
+    polygon: Sequence[Point2D],
+    inset_m: float = 0.35,
+    edge_index: int = 0,
+) -> Point2D:
+    """
+    Return a point slightly inside the polygon, near the midpoint of one edge.
+    """
+    if len(polygon) < 3:
+        raise ValueError("Polygon must contain at least 3 points.")
+
+    n = len(polygon)
+    i = edge_index % n
+
+    ax, ay = polygon[i]
+    bx, by = polygon[(i + 1) % n]
+
+    mid = ((ax + bx) * 0.5, (ay + by) * 0.5)
+
+    tx = bx - ax
+    ty = by - ay
+    tangent = normalize((tx, ty))
+
+    is_ccw = polygon_signed_area(polygon) > 0.0
+    inward = normalize(left_normal(tangent) if is_ccw else right_normal(tangent))
+
+    return (
+        mid[0] + inset_m * inward[0],
+        mid[1] + inset_m * inward[1],
+    )
+
+
+def compute_circle_label_point(
+    center: Point2D,
+    radius_m: float,
+    inset_m: float = 0.25,
+) -> Point2D:
+    cx, cy = center
+    return (cx, cy + max(0.0, radius_m - inset_m))
 
 
 def main() -> int:
@@ -477,10 +552,17 @@ def main() -> int:
         # Draw all polygons - inclusion and exclusion
         for poly in geofence.polygons:
             draw_polygon(frame, poly.points, bounds, color=zone_color(poly.inclusion), thickness=2)
+            edge_i = longest_edge_index(poly.points)
+            label_world = compute_polygon_label_point(poly.points, inset_m=0.35, edge_index=edge_i)
+            lx, ly = world_to_image(label_world, bounds, frame.shape[1], frame.shape[0])
+            draw_text(frame, poly.zone_name, lx + 4, ly - 4)
 
         # Draw circles
         for circle in geofence.circles:
             draw_circle(frame, circle.center, circle.radius_m, bounds, color=zone_color(circle.inclusion), thickness=2)
+            label_world = compute_circle_label_point(circle.center, circle.radius_m, inset_m=0.25)
+            lx, ly = world_to_image(label_world, bounds, frame.shape[1], frame.shape[0])
+            draw_text(frame, circle.zone_name, lx + 4, ly - 4)
 
         # Draw breach return
         if geofence.breach_return is not None:

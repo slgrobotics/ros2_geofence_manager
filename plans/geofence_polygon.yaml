@@ -31,5 +31,5 @@ geofence:
       radius_m: 1.0
 
   breach_return:
-    point: {x: 0.0, y: 0.0}
+    point: {x: 0.0, y: 3.8}
     altitude_m: 0.0
