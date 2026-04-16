@@ -199,13 +199,13 @@ def draw_line(
     cv2.line(image, pa, pb, color, thickness)
 
 
-def draw_text(image: np.ndarray, text: str, x: int, y: int) -> None:
+def draw_text(image: np.ndarray, text: str, x: int, y: int, scale: float = 0.7) -> None:
     cv2.putText(
         image,
         text,
         (x, y),
         cv2.FONT_HERSHEY_SIMPLEX,
-        fontScale=0.7,
+        fontScale=scale,
         color=(220, 220, 220),
         thickness=1,
         lineType=cv2.LINE_AA,
@@ -348,17 +348,17 @@ def compute_polygon_label_point(
 
     return (
         mid[0] + inset_m * inward[0],
-        mid[1] + inset_m * inward[1],
+        mid[1] + inset_m * 3.0 * inward[1],
     )
 
 
 def compute_circle_label_point(
     center: Point2D,
     radius_m: float,
-    inset_m: float = 0.25,
+    inset_factor: float = 0.1,
 ) -> Point2D:
     cx, cy = center
-    return (cx, cy + max(0.0, radius_m - inset_m))
+    return (cx - radius_m * inset_factor * 3, cy + radius_m * inset_factor)
 
 
 def main() -> int:
@@ -559,20 +559,20 @@ def main() -> int:
             edge_i = longest_edge_index(poly.points)
             label_world = compute_polygon_label_point(poly.points, inset_m=0.35, edge_index=edge_i)
             lx, ly = world_to_image(label_world, bounds, frame.shape[1], frame.shape[0])
-            draw_text(frame, poly.zone_name, lx + 4, ly - 4)
+            draw_text(frame, poly.zone_name, lx + 4, ly - 4, scale=0.9)
 
         # Draw circles
         for circle in geofence.circles:
             draw_circle(frame, circle.center, circle.radius_m, bounds, color=zone_color(circle.inclusion), thickness=2)
-            label_world = compute_circle_label_point(circle.center, circle.radius_m, inset_m=0.25)
+            label_world = compute_circle_label_point(circle.center, circle.radius_m, inset_factor=0.1)
             lx, ly = world_to_image(label_world, bounds, frame.shape[1], frame.shape[0])
-            draw_text(frame, circle.zone_name, lx + 4, ly - 4)
+            draw_text(frame, circle.zone_name, lx + 4, ly - 4, scale=0.9)
 
         # Draw breach return
         if geofence.breach_return is not None:
             draw_cross(frame, geofence.breach_return.point, bounds, color=(255, 255, 255), size=8, thickness=2)
             bx, by = world_to_image(geofence.breach_return.point, bounds, frame.shape[1], frame.shape[0])
-            draw_text(frame, "BreachReturn", bx + 8, by - 8)
+            draw_text(frame, "BreachReturn", bx + 8, by - 8, scale=0.9)
 
         if len(trail) >= 2:
             for i in range(1, len(trail)):
@@ -584,7 +584,7 @@ def main() -> int:
         center = world_to_image(target_xy, bounds, frame.shape[1], frame.shape[0])
 
         tx, ty = center[0] + 8, center[1] - 8
-        draw_text(frame, "Target", tx, ty)
+        draw_text(frame, "Target", tx, ty, scale=0.8)
 
         draw_point(frame, hit.closest_point, bounds, (255, 255, 0), radius=5)
         draw_line(frame, robot_xy, hit.closest_point, bounds, (255, 255, 0), 1)
