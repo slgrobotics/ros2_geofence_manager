@@ -29,12 +29,12 @@ from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cart
 #
 # cd ~/robot_ws/src/ros2_geofence_manager/test
 #     using custom YAML format with local Cartesian input:
-# ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
-# ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10 --zone-name home_area
+# ./test_bounce_excl.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2
+# ./test_bounce_excl.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --zone-name home_area
 #
 #      using QGroundControl .plan files with WGS84 lat/lon input:
-# ./test_bounce.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10
-# ./test_bounce.py --file ../plans/geofence_qgroundcontrol_multi.plan --x 33.19983710 --y -86.29979086 --angle-deg 30 --angle-jitter 10 --zone-name polygon_1
+# ./test_bounce_excl.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086
+# ./test_bounce_excl.py --file ../plans/geofence_qgroundcontrol_multi.plan --x 33.19983710 --y -86.29979086 --zone-name polygon_1
 #
 
 
@@ -71,30 +71,6 @@ def parse_args() -> argparse.Namespace:
         type=float,
         required=True,
         help="Initial robot y in polygon frame.",
-    )
-    parser.add_argument(
-        "--angle-deg",
-        type=float,
-        default=0.0,
-        help="Bounce angle in degrees. 0 = orthogonal inward.",
-    )
-    parser.add_argument(
-        "--angle-jitter",
-        type=float,
-        default=10.0,
-        help="Random variation added to bounce angle (deg)",
-    )
-    parser.add_argument(
-        "--start-inset",
-        type=float,
-        default=0.25,
-        help="Inset from nearest boundary before ray cast.",
-    )
-    parser.add_argument(
-        "--goal-inset",
-        type=float,
-        default=0.50,
-        help="Inset from far boundary for final target.",
     )
     parser.add_argument(
         "--step-size",
@@ -304,11 +280,17 @@ def main() -> int:
     else:
         print("\n--- Breach Return: (none)")
 
-
     selected_polygon = select_test_polygon(geofence, args.zone_name)
-    polygon_type = "Inclusion" if selected_polygon.inclusion else "Exclusion"
+    if not selected_polygon.inclusion:
+        raise ValueError("Selected polygon is an exclusion polygon, cannot proceed.")
+    else:
+        polygon_type = "Inclusion"
 
-    inclusion_polygon = selected_polygon.points
+    inclusion_candidates = [poly for poly in geofence.polygons if poly.inclusion]
+    if not inclusion_candidates:
+        raise ValueError("No inclusion polygon available for random target generation.")
+
+    inclusion_polygon = inclusion_candidates[0].points
     exclusion_polygons = [poly.points for poly in geofence.polygons if not poly.inclusion]
 
     print("\n=== Selected Polygon ===")
@@ -323,11 +305,14 @@ def main() -> int:
         print("  ...")
 
     # Compute bounds for visibility check
-    xs = [p[0] for p in selected_polygon.points]
-    ys = [p[1] for p in selected_polygon.points]
+    all_drawn_points = list(selected_polygon.points)
+    for exclusion in exclusion_polygons:
+        all_drawn_points.extend(exclusion)
 
-    print(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
-    print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
+    bounds = compute_bounds(all_drawn_points)
+
+    # print(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
+    # print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
     print("========================\n")
 
     if local_frame is not None:
@@ -366,16 +351,16 @@ def main() -> int:
 
     trail: List[Point2D] = [robot_xy]
 
-    bounce_angle_deg = args.angle_deg
-    bounce_angle_sign = 1.0
+    inclusion_boundary_margin_m=0.0025
+    exclusion_boundary_margin_m=0.515
 
     target_result = compute_random_safe_target(
         robot_xy=robot_xy,
-        inclusion_polygon=polygon,
+        inclusion_polygon=inclusion_polygon,
         exclusion_polygons=exclusion_polygons,
         max_samples=200,
-        inclusion_boundary_margin_m=0.25,
-        exclusion_boundary_margin_m=0.15,
+        inclusion_boundary_margin_m=inclusion_boundary_margin_m,
+        exclusion_boundary_margin_m=exclusion_boundary_margin_m,
     )
 
     if not target_result.success:
@@ -396,30 +381,17 @@ def main() -> int:
         if d <= args.arrival_tol:
             target_result = compute_random_safe_target(
                 robot_xy=robot_xy,
-                inclusion_polygon=polygon,
+                inclusion_polygon=inclusion_polygon,
                 exclusion_polygons=exclusion_polygons,
                 max_samples=200,
-                inclusion_boundary_margin_m=0.25,
-                exclusion_boundary_margin_m=0.15,
+                inclusion_boundary_margin_m=inclusion_boundary_margin_m,
+                exclusion_boundary_margin_m=exclusion_boundary_margin_m,
             )
             if not target_result.success:
                 print(f"Random target failed: {target_result.reason}", file=sys.stderr)
                 break
 
             target_xy = target_result.target_point
-
-
-            # Invert bounce angle for next run to bounce to both sides, add random jitter.
-            #bounce_angle_sign = -bounce_angle_sign
-            bounce_angle_sign = 1.0 if random.random() < 0.5 else -1.0
-            #bounce_angle_sign = -1.0
-
-            bounce_angle_deg = args.angle_deg * bounce_angle_sign + random.uniform(-args.angle_jitter, args.angle_jitter)
-            bounce_angle_deg = clamp(bounce_angle_deg, -60.0, 60.0)
-
-            # bounce_angle_deg += random.uniform(-args.angle_jitter, args.angle_jitter)
-            # bounce_angle_deg = clamp(bounce_angle_deg, -60.0, 60.0)
-            # bounce_angle_deg = abs(bounce_angle_deg) * bounce_angle_sign
 
         direction = normalize((target_xy[0] - robot_xy[0], target_xy[1] - robot_xy[1]))
         robot_xy = (
@@ -431,20 +403,14 @@ def main() -> int:
             trail = trail[-3000:]
 
         hit = compute_nearest_boundary_hit(robot_xy, polygon)
-
-        # target_result = compute_random_safe_target(
-        #     robot_xy=robot_xy,
-        #     inclusion_polygon=polygon,
-        #     exclusion_polygons=exclusion_polygons,
-        #     max_samples=200,
-        #     inclusion_boundary_margin_m=0.25,
-        #     exclusion_boundary_margin_m=0.15,
-        # )
-        # if not target_result.success:
-        #     print(f"Random target failed: {target_result.reason}", file=sys.stderr)
-        #     break
-
-        #target_xy = target_result.target_point
+        bounce_dbg = compute_bounce_target(
+            robot_xy=robot_xy,
+            polygon=polygon,
+            bounce_angle_deg=30.0,
+            start_inset_m=0.25,
+            goal_inset_m=0.50,
+            center_bias=0.1,
+        )
 
         frame = np.zeros((args.height, args.width, 3), dtype=np.uint8)
 
@@ -476,12 +442,11 @@ def main() -> int:
 
         draw_text(frame, f"zone name: {selected_polygon.zone_name} type: {polygon_type}", 15, 25)
         draw_text(frame, f"ref frame: {selected_polygon.reference_frame}", 15, 50)
-        draw_text(frame, "q: quit", frame.shape[0] - 125, frame.shape[1] - 25)
+        draw_text(frame, "q: quit", frame.shape[1] - 125, frame.shape[0] - 25)
 
-        draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, frame.shape[1] - 75)
-        draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, frame.shape[1] - 50)
-        draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, frame.shape[1] - 25)
-        draw_text(frame, f"bounce angle: {bounce_angle_deg:.1f} deg", 300, frame.shape[1] - 25)
+        draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, frame.shape[0] - 75)
+        draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, frame.shape[0] - 50)
+        draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, frame.shape[0] - 25)
 
         if local_frame is not None:
             local_origin = (0.0, 0.0)

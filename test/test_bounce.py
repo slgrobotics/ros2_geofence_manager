@@ -455,12 +455,12 @@ def main() -> int:
 
         draw_text(frame, f"zone name: {selected_polygon.zone_name} type: {polygon_type}", 15, 25)
         draw_text(frame, f"ref frame: {selected_polygon.reference_frame}", 15, 50)
-        draw_text(frame, "q: quit", frame.shape[0] - 125, frame.shape[1] - 25)
+        draw_text(frame, "q: quit", frame.shape[1] - 125, frame.shape[0] - 25)
 
-        draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, frame.shape[1] - 75)
-        draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, frame.shape[1] - 50)
-        draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, frame.shape[1] - 25)
-        draw_text(frame, f"bounce angle: {bounce_angle_deg:.1f} deg", 300, frame.shape[1] - 25)
+        draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, frame.shape[0] - 75)
+        draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, frame.shape[0] - 50)
+        draw_text(frame, f"nearest boundary dist: {hit.distance_m:.2f}", 15, frame.shape[0] - 25)
+        draw_text(frame, f"bounce angle: {bounce_angle_deg:.1f} deg", 300, frame.shape[0] - 25)
 
         if local_frame is not None:
             local_origin = (0.0, 0.0)
