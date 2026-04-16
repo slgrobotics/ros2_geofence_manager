@@ -5,11 +5,11 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Sequence, Tuple
 
-from geofence_manager.helpers.geometry_utils import point_in_polygon
-from geofence_manager.helpers.common_data import Point2D, EPS, GeofenceZoneCircle
+from geofence_manager.helpers.common_data import EPS, GeofenceZoneCircle, Point2D
 from geofence_manager.helpers.geometry_bounce import compute_nearest_boundary_hit
+from geofence_manager.helpers.geometry_utils import point_in_polygon
 
 
 @dataclass
@@ -25,6 +25,7 @@ def compute_random_safe_target(
     inclusion_polygon: Sequence[Point2D],
     exclusion_polygons: Sequence[Sequence[Point2D]] | None = None,
     exclusion_circles: Sequence[GeofenceZoneCircle] | None = None,
+    target_not_closer_m: float = 1.0,
     max_samples: int = 200,
     inclusion_boundary_margin_m: float = 0.25,
     exclusion_boundary_margin_m: float = 0.25,
@@ -34,10 +35,14 @@ def compute_random_safe_target(
     - lies inside the inclusion polygon
     - stays away from the inclusion boundary by inclusion_boundary_margin_m
     - does not lie inside any exclusion polygon
-    - stays away from exclusion boundaries by exclusion_boundary_margin_m
+    - does not lie inside or too close to any exclusion circle
     - has a direct robot->target segment that does not intersect any exclusion polygon
+    - has a direct robot->target segment that does not intersect any exclusion circle
 
     Intended as a simple high-level target selector for wandering / patrolling.
+
+    Current limitation:
+    - the allowed area is defined by one inclusion polygon only
     """
     if len(inclusion_polygon) < 3:
         return RandomTargetResult(
@@ -50,60 +55,57 @@ def compute_random_safe_target(
     exclusion_polygons = exclusion_polygons or []
     exclusion_circles = exclusion_circles or []
 
+    robot_inside_exclusion_polygon = point_in_any_polygon(robot_xy, exclusion_polygons)
+    robot_inside_exclusion_circle = point_in_any_circle(robot_xy, exclusion_circles)
+
     bbox = polygon_bounding_box(inclusion_polygon)
+    diag = math.hypot(bbox[1] - bbox[0], bbox[3] - bbox[2])
+
+    if target_not_closer_m > 0.5 * diag:
+        return RandomTargetResult(
+                success=False,
+                target_point=robot_xy,
+                reason=f"target_not_closer_m ({target_not_closer_m}) is too large relative to the inclusion polygon size (diagonal {diag:.2f})",
+                attempts_used=0,
+            )
 
     for attempt in range(1, max_samples + 1):
         candidate = sample_random_point_in_bbox(bbox)
 
+        # Reject if too close to robot
+        if distance(robot_xy, candidate) < target_not_closer_m:
+            continue
+
         if not point_in_polygon(candidate[0], candidate[1], inclusion_polygon):
             continue
 
-        # Keep some clearance from the outer boundary.
-        try:
-            outer_hit = compute_nearest_boundary_hit(candidate, inclusion_polygon)
-        except ValueError:
+        if candidate_too_close_to_inclusion_boundary(
+            candidate,
+            inclusion_polygon,
+            inclusion_boundary_margin_m,
+        ):
             continue
 
-        if outer_hit.distance_m < inclusion_boundary_margin_m:
+        if candidate_blocked_by_exclusion_polygons(
+            candidate,
+            exclusion_polygons,
+            exclusion_boundary_margin_m,
+        ):
             continue
 
-        # Reject if the point lies inside, or too close to, any exclusion polygon.
-        blocked = False
-        for exclusion in exclusion_polygons:
-            if len(exclusion) < 3:
-                continue
-
-            if point_in_polygon(candidate[0], candidate[1], exclusion):
-                blocked = True
-                break
-
-            try:
-                exclusion_hit = compute_nearest_boundary_hit(candidate, exclusion)
-            except ValueError:
-                continue
-
-            if exclusion_hit.distance_m < exclusion_boundary_margin_m:
-                blocked = True
-                break
-
-        # Reject if the point lies inside, or too close to, any exclusion circle.
-        for circle in exclusion_circles:
-            if point_inside_circle(candidate, circle.center, circle.radius_m):
-                blocked = True
-                break
-
-            if distance_to_circle_boundary(candidate, circle.center, circle.radius_m) < exclusion_boundary_margin_m:
-                blocked = True
-                break
-
-        if blocked:
+        if candidate_blocked_by_exclusion_circles(
+            candidate,
+            exclusion_circles,
+            exclusion_boundary_margin_m,
+        ):
             continue
 
-        # Reject if direct path to target crosses any exclusion polygon.
-        if path_intersects_any_polygon(robot_xy, candidate, exclusion_polygons):
-            continue
-
-        if path_intersects_any_circle(robot_xy, candidate, exclusion_circles):
+        if not candidate_has_clear_path(
+            robot_xy,
+            candidate,
+            exclusion_polygons,
+            exclusion_circles,
+        ):
             continue
 
         return RandomTargetResult(
@@ -113,12 +115,94 @@ def compute_random_safe_target(
             attempts_used=attempt,
         )
 
+    if robot_inside_exclusion_polygon or robot_inside_exclusion_circle:
+        fail_reason = (
+            "failed to find a valid random target "
+            "(robot starts inside an exclusion zone or constraints too strict)"
+        )
+    else:
+        fail_reason = (
+            "failed to find a valid random target "
+            "(try reducing target_not_closer_m or margins)"
+        )
+
     return RandomTargetResult(
         success=False,
         target_point=robot_xy,
-        reason="failed to find a valid random target",
+        reason=fail_reason,
         attempts_used=max_samples,
     )
+
+
+def distance(a: Point2D, b: Point2D) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def candidate_too_close_to_inclusion_boundary(
+    candidate: Point2D,
+    inclusion_polygon: Sequence[Point2D],
+    margin_m: float,
+) -> bool:
+    try:
+        outer_hit = compute_nearest_boundary_hit(candidate, inclusion_polygon)
+    except ValueError:
+        return True
+
+    return outer_hit.distance_m < margin_m
+
+
+def candidate_blocked_by_exclusion_polygons(
+    candidate: Point2D,
+    exclusion_polygons: Sequence[Sequence[Point2D]],
+    margin_m: float,
+) -> bool:
+    for exclusion in exclusion_polygons:
+        if len(exclusion) < 3:
+            continue
+
+        if point_in_polygon(candidate[0], candidate[1], exclusion):
+            return True
+
+        try:
+            exclusion_hit = compute_nearest_boundary_hit(candidate, exclusion)
+        except ValueError:
+            continue
+
+        if exclusion_hit.distance_m < margin_m:
+            return True
+
+    return False
+
+
+def candidate_blocked_by_exclusion_circles(
+    candidate: Point2D,
+    exclusion_circles: Sequence[GeofenceZoneCircle],
+    margin_m: float,
+) -> bool:
+    for circle in exclusion_circles:
+        if point_blocked_by_circle(
+            candidate,
+            circle.center,
+            circle.radius_m,
+            margin_m,
+        ):
+            return True
+    return False
+
+
+def candidate_has_clear_path(
+    robot_xy: Point2D,
+    candidate: Point2D,
+    exclusion_polygons: Sequence[Sequence[Point2D]],
+    exclusion_circles: Sequence[GeofenceZoneCircle],
+) -> bool:
+    if path_intersects_any_polygon(robot_xy, candidate, exclusion_polygons):
+        return False
+
+    if path_intersects_any_circle(robot_xy, candidate, exclusion_circles):
+        return False
+
+    return True
 
 
 def polygon_bounding_box(
@@ -139,6 +223,18 @@ def sample_random_point_in_bbox(
     )
 
 
+def point_in_any_polygon(
+    p: Point2D,
+    polygons: Sequence[Sequence[Point2D]],
+) -> bool:
+    for polygon in polygons:
+        if len(polygon) < 3:
+            continue
+        if point_in_polygon(p[0], p[1], polygon):
+            return True
+    return False
+
+
 def path_intersects_any_polygon(
     a: Point2D,
     b: Point2D,
@@ -148,7 +244,6 @@ def path_intersects_any_polygon(
         if len(polygon) < 3:
             continue
 
-        # If either endpoint is inside the exclusion polygon, treat as blocked.
         if point_in_polygon(a[0], a[1], polygon) or point_in_polygon(b[0], b[1], polygon):
             return True
 
@@ -185,11 +280,9 @@ def segments_intersect(
     o3 = orientation(c, d, a)
     o4 = orientation(c, d, b)
 
-    # General case
     if o1 * o2 < 0.0 and o3 * o4 < 0.0:
         return True
 
-    # Collinear / touching cases
     if abs(o1) < EPS and on_segment(a, c, b):
         return True
     if abs(o2) < EPS and on_segment(a, d, b):
@@ -236,12 +329,23 @@ def point_inside_circle(
     return math.hypot(p[0] - center[0], p[1] - center[1]) <= radius_m + EPS
 
 
-def distance_to_circle_boundary(
+def point_blocked_by_circle(
     p: Point2D,
     center: Point2D,
     radius_m: float,
-) -> float:
-    return abs(math.hypot(p[0] - center[0], p[1] - center[1]) - radius_m)
+    margin_m: float,
+) -> bool:
+    return math.hypot(p[0] - center[0], p[1] - center[1]) <= radius_m + margin_m
+
+
+def point_in_any_circle(
+    p: Point2D,
+    circles: Sequence[GeofenceZoneCircle],
+) -> bool:
+    for circle in circles:
+        if point_inside_circle(p, circle.center, circle.radius_m):
+            return True
+    return False
 
 
 def path_intersects_any_circle(

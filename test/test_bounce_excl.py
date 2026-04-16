@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
         help="Initial robot y in polygon frame.",
     )
     parser.add_argument(
+        "--min-leg-m",
+        type=float,
+        default=1.0,
+        help="Minimum leg length from robot to a target, meters.",
+    )
+    parser.add_argument(
         "--step-size",
         type=float,
         default=0.08,
@@ -496,6 +502,7 @@ def main() -> int:
         inclusion_polygon=inclusion_polygon,
         exclusion_polygons=exclusion_polygons,
         exclusion_circles=exclusion_circles,
+        target_not_closer_m=args.min_leg_m,
         max_samples=200,
         inclusion_boundary_margin_m=inclusion_boundary_margin_m,
         exclusion_boundary_margin_m=exclusion_boundary_margin_m,
@@ -522,6 +529,7 @@ def main() -> int:
                 inclusion_polygon=inclusion_polygon,
                 exclusion_polygons=exclusion_polygons,
                 exclusion_circles=exclusion_circles,
+                target_not_closer_m=args.min_leg_m,
                 max_samples=200,
                 inclusion_boundary_margin_m=inclusion_boundary_margin_m,
                 exclusion_boundary_margin_m=exclusion_boundary_margin_m,
