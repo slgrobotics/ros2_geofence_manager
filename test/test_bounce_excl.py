@@ -227,6 +227,61 @@ def clamp(value: float, min_val: float, max_val: float) -> float:
     return max(min_val, min(max_val, value))
 
 
+def collect_all_draw_points(geofence) -> List[Point2D]:
+    points: List[Point2D] = []
+
+    # All polygon vertices
+    for poly in geofence.polygons:
+        points.extend(poly.points)
+
+    # Circle extents: left/right/top/bottom of each circle
+    for circle in geofence.circles:
+        cx, cy = circle.center
+        r = circle.radius_m
+        points.extend([
+            (cx - r, cy),
+            (cx + r, cy),
+            (cx, cy - r),
+            (cx, cy + r),
+        ])
+
+    # Breach return point
+    if geofence.breach_return is not None:
+        points.append(geofence.breach_return.point)
+
+    return points
+
+
+def draw_circle(
+    image: np.ndarray,
+    center: Point2D,
+    radius_m: float,
+    bounds: Tuple[float, float, float, float],
+    color: Tuple[int, int, int],
+    thickness: int = 2,
+) -> None:
+    cx, cy = world_to_image(center, bounds, image.shape[1], image.shape[0])
+
+    edge_world = (center[0] + radius_m, center[1])
+    ex, ey = world_to_image(edge_world, bounds, image.shape[1], image.shape[0])
+
+    radius_px = max(1, int(round(abs(ex - cx))))
+    cv2.circle(image, (cx, cy), radius_px, color, thickness)
+
+
+def draw_cross(
+    image: np.ndarray,
+    p: Point2D,
+    bounds: Tuple[float, float, float, float],
+    color: Tuple[int, int, int],
+    size: int = 6,
+    thickness: int = 2,
+) -> None:
+    px, py = world_to_image(p, bounds, image.shape[1], image.shape[0])
+    cv2.line(image, (px - size, py), (px + size, py), color, thickness)
+    cv2.line(image, (px, py - size), (px, py + size), color, thickness)
+
+
 def main() -> int:
     global _RUNNING
 
@@ -304,15 +359,16 @@ def main() -> int:
     if len(selected_polygon.points) > 5:
         print("  ...")
 
-    # Compute bounds for visibility check
-    all_drawn_points = list(selected_polygon.points)
-    for exclusion in exclusion_polygons:
-        all_drawn_points.extend(exclusion)
+    all_draw_points = collect_all_draw_points(geofence)
+    if not all_draw_points:
+        print("No drawable geometry found.", file=sys.stderr)
+        return 1
 
-    bounds = compute_bounds(all_drawn_points)
+    xs = [p[0] for p in all_draw_points]
+    ys = [p[1] for p in all_draw_points]
 
-    # print(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
-    # print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
+    print(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
+    print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
     print("========================\n")
 
     if local_frame is not None:
@@ -336,7 +392,7 @@ def main() -> int:
         print("Polygon must contain at least 3 points.", file=sys.stderr)
         return 1
 
-    bounds = compute_bounds(polygon)
+    bounds = compute_bounds(all_draw_points)
 
     print(f"Initial robot position: ({robot_xy[0]:.6f}, {robot_xy[1]:.6f})")
 
@@ -414,7 +470,21 @@ def main() -> int:
 
         frame = np.zeros((args.height, args.width, 3), dtype=np.uint8)
 
-        draw_polygon(frame, polygon, bounds)
+        # Draw all polygons
+        for poly in geofence.polygons:
+            color = (200, 200, 200) if poly.inclusion else (0, 0, 255)
+            draw_polygon(frame, poly.points, bounds, color=color, thickness=2)
+
+        # Draw circles
+        for circle in geofence.circles:
+            color = (200, 200, 200) if circle.inclusion else (0, 0, 255)
+            draw_circle(frame, circle.center, circle.radius_m, bounds, color=color, thickness=2)
+
+        # Draw breach return
+        if geofence.breach_return is not None:
+            draw_cross(frame, geofence.breach_return.point, bounds, color=(255, 255, 255), size=8, thickness=2)
+            bx, by = world_to_image(geofence.breach_return.point, bounds, frame.shape[1], frame.shape[0])
+            draw_text(frame, "BreachReturn", bx + 8, by - 8)
 
         for exclusion in exclusion_polygons:
             draw_polygon(frame, exclusion, bounds, color=(0, 0, 255), thickness=2)
@@ -442,7 +512,7 @@ def main() -> int:
 
         draw_text(frame, f"zone name: {selected_polygon.zone_name} type: {polygon_type}", 15, 25)
         draw_text(frame, f"ref frame: {selected_polygon.reference_frame}", 15, 50)
-        draw_text(frame, "q: quit", frame.shape[1] - 125, frame.shape[0] - 25)
+        draw_text(frame, "q: quit", frame.shape[1] - 80, frame.shape[0] - 25)
 
         draw_text(frame, f"robot: ({robot_xy[0]:.2f}, {robot_xy[1]:.2f})", 15, frame.shape[0] - 75)
         draw_text(frame, f"target: ({target_xy[0]:.2f}, {target_xy[1]:.2f})", 15, frame.shape[0] - 50)
