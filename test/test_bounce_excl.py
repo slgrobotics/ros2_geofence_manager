@@ -63,14 +63,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--x",
         type=float,
-        required=True,
-        help="Initial robot x in polygon frame.",
+        default=None,
+        help="Initial robot x (or latitude for WGS84). If omitted, random point inside polygon is used.",
     )
     parser.add_argument(
         "--y",
         type=float,
-        required=True,
-        help="Initial robot y in polygon frame.",
+        default=None,
+        help="Initial robot y (or longitude for WGS84). If omitted, random point inside polygon is used.",
     )
     parser.add_argument(
         "--min-leg-m",
@@ -126,6 +126,34 @@ def select_test_polygon(collection, zone_name: str = ""):
         return collection.polygons[0]
 
     raise ValueError("No polygon zones found in geofence collection.")
+
+
+def sample_valid_start_point(
+    inclusion_polygon,
+    exclusion_polygons,
+    exclusion_circles,
+    max_attempts=1000,
+):
+    bounds = compute_bounds(inclusion_polygon, margin_ratio=0.0)
+
+    for _ in range(max_attempts):
+        p = (
+            random.uniform(bounds[0], bounds[1]),
+            random.uniform(bounds[2], bounds[3]),
+        )
+
+        if not point_in_polygon(p[0], p[1], inclusion_polygon):
+            continue
+
+        if any(point_in_polygon(p[0], p[1], poly) for poly in exclusion_polygons):
+            continue
+
+        if any(math.hypot(p[0] - c.center[0], p[1] - c.center[1]) <= c.radius_m for c in exclusion_circles):
+            continue
+
+        return p
+
+    raise RuntimeError("Failed to sample valid start point.")
 
 
 def compute_bounds(points: Sequence[Point2D], margin_ratio: float = 0.1) -> Tuple[float, float, float, float]:
@@ -458,20 +486,36 @@ def main() -> int:
     print(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
     print("========================\n")
 
-    if local_frame is not None:
-        # Input x/y for .plan files is still given as lat/lon in the current convention.
-        robot_xy = latlon_to_local_xy(
-            lat_deg=args.x,
-            lon_deg=args.y,
-            origin_lat_deg=local_frame.origin_lat_deg,
-            origin_lon_deg=local_frame.origin_lon_deg,
+    # Validate argument combination
+    if (args.x is None) ^ (args.y is None):
+        raise ValueError("Both --x and --y must be provided together, or both omitted.")
+
+    if args.x is not None and args.y is not None:
+        # User provided position
+        if local_frame is not None:
+            robot_xy = latlon_to_local_xy(
+                lat_deg=args.x,
+                lon_deg=args.y,
+                origin_lat_deg=local_frame.origin_lat_deg,
+                origin_lon_deg=local_frame.origin_lon_deg,
+            )
+            print(
+                f"Initial robot WGS84: ({args.x:.8f}, {args.y:.8f}) -> "
+                f"local XY: ({robot_xy[0]:.3f}, {robot_xy[1]:.3f})"
+            )
+        else:
+            robot_xy = (args.x, args.y)
+    else:
+        # Auto-generate start inside selected polygon
+        robot_xy = sample_valid_start_point(
+            inclusion_polygon,
+            exclusion_polygons,
+            exclusion_circles,
         )
         print(
-            f"Initial robot WGS84: ({args.x:.8f}, {args.y:.8f}) -> "
-            f"local XY: ({robot_xy[0]:.3f}, {robot_xy[1]:.3f})"
+            f"Initial robot position randomly sampled inside polygon: "
+            f"({robot_xy[0]:.3f}, {robot_xy[1]:.3f})"
         )
-    else:
-        robot_xy = (args.x, args.y)
 
     polygon: List[Point2D] = list(selected_polygon.points)
 
