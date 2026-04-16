@@ -7,8 +7,8 @@ import random
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
-from geofence_manager.helpers.common_data import Point2D, EPS
 from geofence_manager.helpers.geometry_utils import point_in_polygon
+from geofence_manager.helpers.common_data import Point2D, EPS, GeofenceZoneCircle
 from geofence_manager.helpers.geometry_bounce import compute_nearest_boundary_hit
 
 
@@ -24,6 +24,7 @@ def compute_random_safe_target(
     robot_xy: Point2D,
     inclusion_polygon: Sequence[Point2D],
     exclusion_polygons: Sequence[Sequence[Point2D]] | None = None,
+    exclusion_circles: Sequence[GeofenceZoneCircle] | None = None,
     max_samples: int = 200,
     inclusion_boundary_margin_m: float = 0.25,
     exclusion_boundary_margin_m: float = 0.25,
@@ -47,6 +48,7 @@ def compute_random_safe_target(
         )
 
     exclusion_polygons = exclusion_polygons or []
+    exclusion_circles = exclusion_circles or []
 
     bbox = polygon_bounding_box(inclusion_polygon)
 
@@ -84,11 +86,24 @@ def compute_random_safe_target(
                 blocked = True
                 break
 
+        # Reject if the point lies inside, or too close to, any exclusion circle.
+        for circle in exclusion_circles:
+            if point_inside_circle(candidate, circle.center, circle.radius_m):
+                blocked = True
+                break
+
+            if distance_to_circle_boundary(candidate, circle.center, circle.radius_m) < exclusion_boundary_margin_m:
+                blocked = True
+                break
+
         if blocked:
             continue
 
         # Reject if direct path to target crosses any exclusion polygon.
         if path_intersects_any_polygon(robot_xy, candidate, exclusion_polygons):
+            continue
+
+        if path_intersects_any_circle(robot_xy, candidate, exclusion_circles):
             continue
 
         return RandomTargetResult(
@@ -211,3 +226,60 @@ def cross2d(
     v: Point2D,
 ) -> float:
     return u[0] * v[1] - u[1] * v[0]
+
+
+def point_inside_circle(
+    p: Point2D,
+    center: Point2D,
+    radius_m: float,
+) -> bool:
+    return math.hypot(p[0] - center[0], p[1] - center[1]) <= radius_m + EPS
+
+
+def distance_to_circle_boundary(
+    p: Point2D,
+    center: Point2D,
+    radius_m: float,
+) -> float:
+    return abs(math.hypot(p[0] - center[0], p[1] - center[1]) - radius_m)
+
+
+def path_intersects_any_circle(
+    a: Point2D,
+    b: Point2D,
+    circles: Sequence[GeofenceZoneCircle],
+) -> bool:
+    for circle in circles:
+        if point_inside_circle(a, circle.center, circle.radius_m):
+            return True
+        if point_inside_circle(b, circle.center, circle.radius_m):
+            return True
+        if segment_intersects_circle(a, b, circle.center, circle.radius_m):
+            return True
+    return False
+
+
+def segment_intersects_circle(
+    a: Point2D,
+    b: Point2D,
+    center: Point2D,
+    radius_m: float,
+) -> bool:
+    ax, ay = a
+    bx, by = b
+    cx, cy = center
+
+    abx = bx - ax
+    aby = by - ay
+    ab_len_sq = abx * abx + aby * aby
+
+    if ab_len_sq < EPS:
+        return math.hypot(ax - cx, ay - cy) <= radius_m + EPS
+
+    t = ((cx - ax) * abx + (cy - ay) * aby) / ab_len_sq
+    t = max(0.0, min(1.0, t))
+
+    px = ax + t * abx
+    py = ay + t * aby
+
+    return math.hypot(px - cx, py - cy) <= radius_m + EPS

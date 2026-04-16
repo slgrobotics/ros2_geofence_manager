@@ -425,7 +425,9 @@ def main() -> int:
         raise ValueError("No inclusion polygon available for random target generation.")
 
     inclusion_polygon = inclusion_candidates[0].points
+
     exclusion_polygons = [poly.points for poly in geofence.polygons if not poly.inclusion]
+    exclusion_circles = [circle for circle in geofence.circles if not circle.inclusion]
 
     print("\n=== Selected Polygon ===")
     print(f"zone_name:       {selected_polygon.zone_name}")
@@ -493,6 +495,7 @@ def main() -> int:
         robot_xy=robot_xy,
         inclusion_polygon=inclusion_polygon,
         exclusion_polygons=exclusion_polygons,
+        exclusion_circles=exclusion_circles,
         max_samples=200,
         inclusion_boundary_margin_m=inclusion_boundary_margin_m,
         exclusion_boundary_margin_m=exclusion_boundary_margin_m,
@@ -518,6 +521,7 @@ def main() -> int:
                 robot_xy=robot_xy,
                 inclusion_polygon=inclusion_polygon,
                 exclusion_polygons=exclusion_polygons,
+                exclusion_circles=exclusion_circles,
                 max_samples=200,
                 inclusion_boundary_margin_m=inclusion_boundary_margin_m,
                 exclusion_boundary_margin_m=exclusion_boundary_margin_m,
