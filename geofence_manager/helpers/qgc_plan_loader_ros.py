@@ -88,9 +88,11 @@ def load_geofence_from_qgc_plan_ros(
     """
     geofence_wgs84 = load_geofence_collection_from_qgc_plan(file_path)
 
-    if geofence_wgs84.reference_frame.lower() != "wgs84":
+    wgs84_reference_frame = "wgs84"  # We expect the QGC geofence to be defined in WGS84 lat/lon coordinates
+
+    if geofence_wgs84.reference_frame.lower() != wgs84_reference_frame:
         raise ValueError(
-            f"Expected WGS84 geofence from QGC loader, got '{geofence_wgs84.reference_frame}'"
+            f"Expected WGS84 geofence from QGC loader, got '{geofence_wgs84.reference_frame}' instead of '{wgs84_reference_frame}'."
         )
 
     from_client = node.create_client(FromLL, from_service_name)
@@ -117,7 +119,7 @@ def load_geofence_from_qgc_plan_ros(
                 zone_name=poly.zone_name,
                 points=local_points,
                 inclusion=poly.inclusion,
-                reference_frame=frame_id,
+                reference_frame=wgs84_reference_frame,
             )
         )
 
@@ -137,7 +139,7 @@ def load_geofence_from_qgc_plan_ros(
                 center=center_xy,
                 radius_m=circle.radius_m,
                 inclusion=circle.inclusion,
-                reference_frame=frame_id,
+                reference_frame=wgs84_reference_frame,
             )
         )
 
@@ -154,14 +156,14 @@ def load_geofence_from_qgc_plan_ros(
         local_breach_return = BreachReturnPoint(
             point=breach_xy,
             altitude_m=geofence_wgs84.breach_return.altitude_m,
-            reference_frame=frame_id,
+            reference_frame=wgs84_reference_frame,
         )
 
     lat0, lon0 = _to_ll_origin(node, to_client, timeout_sec)
 
     local_geofence = GeofenceCollection(
         source_name=geofence_wgs84.source_name,
-        reference_frame=frame_id,
+        reference_frame=wgs84_reference_frame,
         polygons=local_polygons,
         circles=local_circles,
         breach_return=local_breach_return,
