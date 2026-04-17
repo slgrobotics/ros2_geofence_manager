@@ -42,7 +42,9 @@
 
 from __future__ import annotations
 
+import math
 from typing import List, Optional, Sequence, Tuple
+
 from pathlib import Path
 
 import rclpy
@@ -62,8 +64,16 @@ from geofence_manager_interfaces.srv import ComputeBounceTarget
 from geofence_manager.helpers.geometry_utils import point_in_polygon
 from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cartesian
 from geofence_manager.helpers.qgc_plan_loader_ros import load_geofence_from_qgc_plan_ros
-from geofence_manager.helpers.geometry_bounce import (compute_bounce_target, compute_nearest_boundary_hit,)
-from geofence_manager.helpers.common_data import BoundaryContext, Point2D, INVALID_DISTANCE_M
+from geofence_manager.helpers.geometry_bounce import (
+    compute_bounce_target,
+    compute_nearest_boundary_hit,
+)
+from geofence_manager.helpers.common_data import (
+    BoundaryContext,
+    GeofenceZoneCircle,
+    Point2D,
+    INVALID_DISTANCE_M,
+)
 
 
 class GeofenceManagerNode(Node):
@@ -114,9 +124,20 @@ class GeofenceManagerNode(Node):
         use_sim_time = self.get_parameter("use_sim_time").value
         self.get_logger().info(f"use_sim_time: {use_sim_time}")
 
-        self._zone_name: str = ""
+        self._source_name: str = ""
         self._polygon_frame_id: str = self._world_frame  # to keep track of the frame the polygon is defined in, hopefully "map" or "odom"
-        self._polygon_xy: List[Point2D] = []
+
+        # Primary inclusion polygon used for boundary/status logic
+        self._inclusion_polygon_name: str = ""
+        self._inclusion_polygon_xy: List[Point2D] = []
+
+        # Additional exclusion geometry
+        self._exclusion_polygons: List[Tuple[str, List[Point2D]]] = []
+        self._exclusion_circles: List[GeofenceZoneCircle] = []
+
+        # Optional breach-return point
+        self._breach_return_point: Optional[Point2D] = None
+        self._breach_return_altitude_m: float = 0.0
 
         self._last_pose_x: Optional[float] = None
         self._last_pose_y: Optional[float] = None
@@ -196,9 +217,13 @@ class GeofenceManagerNode(Node):
 
         self.get_logger().info(
             f"geofence_manager started | file='{self._geofence_file}'\n"
-            f"zone='{self._zone_name}' | zone_frame_id='{self._polygon_frame_id}' | "
-            f"points={len(self._polygon_xy)} | pose_topic='{self._pose_topic}' | "
-            f"pose_source_type='{self._pose_source_type}'"
+            f"source='{self._source_name}' | primary_inclusion='{self._inclusion_polygon_name}' | "
+            f"zone_frame_id='{self._polygon_frame_id}' | "
+            f"inclusion_points={len(self._inclusion_polygon_xy)} | "
+            f"exclusion_polygons={len(self._exclusion_polygons)} | "
+            f"exclusion_circles={len(self._exclusion_circles)} | "
+            f"breach_return={'yes' if self._breach_return_point is not None else 'no'} | "
+            f"pose_topic='{self._pose_topic}' | pose_source_type='{self._pose_source_type}'"
         )
 
 
@@ -217,11 +242,14 @@ class GeofenceManagerNode(Node):
                 frame_id=self._world_frame,
             )
         else:
-            geofence, local_frame = load_geofence_as_local_cartesian(self._geofence_file, frame_id=self._world_frame)
+            geofence, local_frame = load_geofence_as_local_cartesian(
+                self._geofence_file,
+                frame_id=self._world_frame,
+            )
 
-        self.get_logger().info("\n=== Geofence Loaded ===")
+        self.get_logger().info("\n=== Geofence Collection Loaded ===")
         self.get_logger().info(f"file:            {self._geofence_file}")
-        self.get_logger().info(f"zone_name:       {geofence.zone_name}")
+        self.get_logger().info(f"source_name:     {geofence.source_name}")
         self.get_logger().info(f"reference_frame: {geofence.reference_frame}")
         if local_frame is not None:
             self.get_logger().info(
@@ -229,34 +257,119 @@ class GeofenceManagerNode(Node):
                 f"({local_frame.origin_lat_deg:.8f}, {local_frame.origin_lon_deg:.8f}) "
                 f"frame_id: {local_frame.frame_id}"
             )
-        self.get_logger().info(f"num points:      {len(geofence.points)}")
-        # Print first few points for sanity
-        for i, p in enumerate(geofence.points[:10]):
-            self.get_logger().info(f"  pt[{i}]: {p}")
 
-        if len(geofence.points) > 10:
-            self.get_logger().info("  ...")
+        if geofence.polygons:
+            self.get_logger().info(f"\n--- Polygons: {len(geofence.polygons)} ---")
+            for poly in geofence.polygons:
+                self.get_logger().info(
+                    f"  {poly.zone_name:20s} "
+                    f"inclusion={str(poly.inclusion):5s} "
+                    f"points={len(poly.points)}"
+                )
+        else:
+            self.get_logger().info("\n--- Polygons: (none)")
 
-        # Compute bounds for visibility check
-        xs = [p[0] for p in geofence.points]
-        ys = [p[1] for p in geofence.points]
+        if geofence.circles:
+            self.get_logger().info(f"\n--- Circles: {len(geofence.circles)} ---")
+            for circle in geofence.circles:
+                self.get_logger().info(
+                    f"  {circle.zone_name:20s} "
+                    f"inclusion={str(circle.inclusion):5s} "
+                    f"radius={circle.radius_m:.3f}"
+                )
+        else:
+            self.get_logger().info("\n--- Circles: (none)")
 
-        self.get_logger().info(f"x range: [{min(xs):.6f}, {max(xs):.6f}]")
-        self.get_logger().info(f"y range: [{min(ys):.6f}, {max(ys):.6f}]")
-        self.get_logger().info("\n========================")
+        if geofence.breach_return is not None:
+            self.get_logger().info("\n--- Breach Return ---")
+            self.get_logger().info(
+                f"  point={geofence.breach_return.point} "
+                f"altitude_m={geofence.breach_return.altitude_m:.2f}"
+            )
+        else:
+            self.get_logger().info("\n--- Breach Return: (none)")
 
-        self._zone_name = geofence.zone_name
-        self._polygon_frame_id = local_frame.frame_id if local_frame is not None else self._world_frame
-        self._polygon_xy = list(geofence.points)
+        inclusion_candidates = [poly for poly in geofence.polygons if poly.inclusion]
+        if not inclusion_candidates:
+            raise ValueError("Geofence collection must contain at least one inclusion polygon.")
 
-        if len(self._polygon_xy) < 3:
-            raise ValueError("Geofence polygon must contain at least 3 points.")
+        primary = inclusion_candidates[0]
+        if len(primary.points) < 3:
+            raise ValueError("Primary inclusion polygon must contain at least 3 points.")
+
+        self._source_name = geofence.source_name
+        self._polygon_frame_id = local_frame.frame_id if local_frame is not None else geofence.reference_frame
+
+        self._inclusion_polygon_name = primary.zone_name
+        self._inclusion_polygon_xy = list(primary.points)
+
+        self._exclusion_polygons = [
+            (poly.zone_name, list(poly.points))
+            for poly in geofence.polygons
+            if not poly.inclusion
+        ]
+
+        self._exclusion_circles = [
+            GeofenceZoneCircle(
+                zone_name=circle.zone_name,
+                center=circle.center,
+                radius_m=circle.radius_m,
+                inclusion=False,
+                reference_frame=circle.reference_frame,
+            )
+            for circle in geofence.circles
+            if not circle.inclusion
+        ]
+
+        if geofence.breach_return is not None:
+            self._breach_return_point = geofence.breach_return.point
+            self._breach_return_altitude_m = geofence.breach_return.altitude_m
+        else:
+            self._breach_return_point = None
+            self._breach_return_altitude_m = 0.0
+
+        xs = [p[0] for p in self._inclusion_polygon_xy]
+        ys = [p[1] for p in self._inclusion_polygon_xy]
+        self.get_logger().info(
+            f"\nPrimary inclusion polygon: {self._inclusion_polygon_name} | "
+            f"x range: [{min(xs):.6f}, {max(xs):.6f}] | "
+            f"y range: [{min(ys):.6f}, {max(ys):.6f}]"
+        )
+        self.get_logger().info("========================\n")
 
         if self._polygon_frame_id != self._world_frame:
             self.get_logger().warn(
                 f"Geofence frame '{self._polygon_frame_id}' differs from world_frame "
                 f"'{self._world_frame}'. This node does not transform frames in v1."
             )
+
+
+    def _point_inside_any_exclusion_polygon(self, x: float, y: float) -> bool:
+        for _, polygon in self._exclusion_polygons:
+            if len(polygon) >= 3 and point_in_polygon(x, y, polygon):
+                return True
+        return False
+
+
+    def _point_inside_any_exclusion_circle(self, x: float, y: float) -> bool:
+        for circle in self._exclusion_circles:
+            if math.hypot(x - circle.center[0], y - circle.center[1]) <= circle.radius_m:
+                return True
+        return False
+
+
+    def _pose_allowed_in_collection(self, x: float, y: float) -> bool:
+        inside_inclusion = point_in_polygon(x, y, self._inclusion_polygon_xy)
+        if not inside_inclusion:
+            return False
+
+        if self._point_inside_any_exclusion_polygon(x, y):
+            return False
+
+        if self._point_inside_any_exclusion_circle(x, y):
+            return False
+
+        return True
 
 
     def _pose_stamped_callback(self, msg: PoseStamped) -> None:
@@ -304,7 +417,7 @@ class GeofenceManagerNode(Node):
         if status.state != self._last_status_state:
             self.get_logger().info(
                 f"Geofence state changed to {status.state}"
-                f"{' (zone=' + self._zone_name + ')' if self._zone_name else ''}"
+                f"{' (zone=' + self._inclusion_polygon_name + ')' if self._inclusion_polygon_name else ''}"
             )
             self._last_status_state = status.state
 
@@ -482,7 +595,7 @@ class GeofenceManagerNode(Node):
 
         result = compute_bounce_target(
             robot_xy=(self._last_pose_x, self._last_pose_y),
-            polygon=self._polygon_xy,
+            polygon=self._inclusion_polygon_xy,
             bounce_angle_deg=float(request.bounce_angle_deg),
             start_inset_m=float(request.start_inset_m),
             goal_inset_m=float(request.goal_inset_m),
@@ -518,8 +631,8 @@ class GeofenceManagerNode(Node):
 
 
     def _compute_boundary_context(self, x: float, y: float) -> BoundaryContext:
-        hit = compute_nearest_boundary_hit((x, y), self._polygon_xy)
-        inside = point_in_polygon(x, y, self._polygon_xy)
+        hit = compute_nearest_boundary_hit((x, y), self._inclusion_polygon_xy)
+        inside = point_in_polygon(x, y, self._inclusion_polygon_xy)
         return BoundaryContext(
             x=x,
             y=y,
@@ -538,7 +651,7 @@ class GeofenceManagerNode(Node):
         msg = GeofenceStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self._world_frame
-        msg.zone_name = self._zone_name
+        msg.zone_name = self._inclusion_polygon_name
         msg.closest_boundary_point = Point()
         msg.distance_to_boundary_m = INVALID_DISTANCE_M
 
@@ -632,10 +745,27 @@ class GeofenceManagerNode(Node):
         x = float(pose.pose.position.x)
         y = float(pose.pose.position.y)
 
+        # Distance to the outer inclusion boundary is still useful even when exclusions exist.
         ctx = self._compute_boundary_context(x, y)
-        response.allowed = ctx.inside
+
+        inside_inclusion = point_in_polygon(x, y, self._inclusion_polygon_xy)
+        inside_exclusion_polygon = self._point_inside_any_exclusion_polygon(x, y)
+        inside_exclusion_circle = self._point_inside_any_exclusion_circle(x, y)
+
+        allowed = inside_inclusion and not inside_exclusion_polygon and not inside_exclusion_circle
+
+        response.allowed = allowed
         response.distance_to_boundary_m = float(ctx.distance_m)
-        response.reason = "inside geofence" if ctx.inside else "outside geofence"
+
+        if not inside_inclusion:
+            response.reason = "outside primary inclusion polygon"
+        elif inside_exclusion_polygon:
+            response.reason = "inside exclusion polygon"
+        elif inside_exclusion_circle:
+            response.reason = "inside exclusion circle"
+        else:
+            response.reason = "inside allowed geofence region"
+
         return response
 
 
@@ -697,7 +827,7 @@ class GeofenceManagerNode(Node):
         vertex_marker.color.g = 1.0
         vertex_marker.color.b = 0.2
 
-        for x, y in self._polygon_xy:
+        for x, y in self._inclusion_polygon_xy:
             pt = Point()
             pt.x = float(x)
             pt.y = float(y)
@@ -709,13 +839,13 @@ class GeofenceManagerNode(Node):
 
 
     def _closed_polygon_xy(self) -> Sequence[Point2D]:
-        if not self._polygon_xy:
+        if not self._inclusion_polygon_xy:
             return []
 
-        if self._polygon_xy[0] == self._polygon_xy[-1]:
-            return self._polygon_xy
+        if self._inclusion_polygon_xy[0] == self._inclusion_polygon_xy[-1]:
+            return self._inclusion_polygon_xy
 
-        return [*self._polygon_xy, self._polygon_xy[0]]
+        return [*self._inclusion_polygon_xy, self._inclusion_polygon_xy[0]]
 
 
     def _seconds_since_stamp(self, stamp) -> float:

@@ -26,6 +26,9 @@ from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cart
 
 
 #
+# Note: there is a newer test script (test_bounce_excl.py) for exclusion zones avoidance behavior, using randomized target selection.
+#       this simplified test focuses on inclusion polygons and uses deterministic target planning ("bouncing").
+#
 # cd ~/robot_ws/src/ros2_geofence_manager/test
 #     using custom YAML format with local Cartesian input:
 # ./test_bounce.py --file ../plans/geofence_polygon.yaml --x 1.2 --y 3.2 --angle-deg 30 --angle-jitter 10
