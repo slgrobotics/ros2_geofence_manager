@@ -446,6 +446,154 @@ class GeofenceManagerNode(Node):
         dist_msg.data = float(ctx.distance_m)
         self._distance_to_boundary_pub.publish(dist_msg)
 
+    def _make_polygon_line_marker(
+        self,
+        points_xy: Sequence[Point2D],
+        stamp_msg,
+        marker_id: int,
+        ns: str,
+        r: float,
+        g: float,
+        b: float,
+        line_width: float = 0.12,
+    ) -> Marker:
+        marker = Marker()
+        marker.header.stamp = stamp_msg
+        marker.header.frame_id = self._polygon_frame_id
+        marker.ns = ns
+        marker.id = marker_id
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = line_width
+        marker.color.a = 1.0
+        marker.color.r = r
+        marker.color.g = g
+        marker.color.b = b
+
+        if points_xy:
+            closed = list(points_xy)
+            if closed[0] != closed[-1]:
+                closed.append(closed[0])
+
+            for x, y in closed:
+                pt = Point()
+                pt.x = float(x)
+                pt.y = float(y)
+                pt.z = self._markers_offset_z
+                marker.points.append(pt)
+
+        return marker
+
+
+    def _make_polygon_vertex_marker(
+        self,
+        points_xy: Sequence[Point2D],
+        stamp_msg,
+        marker_id: int,
+        ns: str,
+        r: float,
+        g: float,
+        b: float,
+        size: float = 0.20,
+    ) -> Marker:
+        marker = Marker()
+        marker.header.stamp = stamp_msg
+        marker.header.frame_id = self._polygon_frame_id
+        marker.ns = ns
+        marker.id = marker_id
+        marker.type = Marker.SPHERE_LIST
+        marker.action = Marker.ADD
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = size
+        marker.scale.y = size
+        marker.scale.z = size
+        marker.color.a = 1.0
+        marker.color.r = r
+        marker.color.g = g
+        marker.color.b = b
+
+        for x, y in points_xy:
+            pt = Point()
+            pt.x = float(x)
+            pt.y = float(y)
+            pt.z = self._markers_offset_z
+            marker.points.append(pt)
+
+        return marker
+
+
+    def _make_circle_line_marker(
+        self,
+        center: Point2D,
+        radius_m: float,
+        stamp_msg,
+        marker_id: int,
+        ns: str,
+        r: float,
+        g: float,
+        b: float,
+        line_width: float = 0.10,
+        num_segments: int = 48,
+    ) -> Marker:
+        marker = Marker()
+        marker.header.stamp = stamp_msg
+        marker.header.frame_id = self._polygon_frame_id
+        marker.ns = ns
+        marker.id = marker_id
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = line_width
+        marker.color.a = 1.0
+        marker.color.r = r
+        marker.color.g = g
+        marker.color.b = b
+
+        cx, cy = center
+
+        for i in range(num_segments + 1):
+            theta = 2.0 * math.pi * float(i) / float(num_segments)
+            pt = Point()
+            pt.x = float(cx + radius_m * math.cos(theta))
+            pt.y = float(cy + radius_m * math.sin(theta))
+            pt.z = self._markers_offset_z
+            marker.points.append(pt)
+
+        return marker
+
+
+    def _make_breach_return_marker(
+        self,
+        stamp_msg,
+        marker_id: int = 500,
+    ) -> Marker:
+        marker = Marker()
+        marker.header.stamp = stamp_msg
+        marker.header.frame_id = self._polygon_frame_id
+        marker.ns = "geofence_breach_return"
+        marker.id = marker_id
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.orientation.w = 1.0
+
+        marker.scale.x = 0.5
+        marker.scale.y = 0.5
+        marker.scale.z = 0.5
+
+        marker.color.a = 1.0  # fully opaque
+        marker.color.r = 1.0  # bright white return point
+        marker.color.g = 1.0
+        marker.color.b = 1.0
+
+        marker.pose.position.x = float(self._breach_return_point[0])
+        marker.pose.position.y = float(self._breach_return_point[1])
+        marker.pose.position.z = self._markers_offset_z
+
+        return marker
+
+
+
 
     def _delete_dynamic_markers(self, stamp_msg) -> None:
         marker_array = MarkerArray()
@@ -790,53 +938,89 @@ class GeofenceManagerNode(Node):
         marker_array = MarkerArray()
         stamp = self.get_clock().now().to_msg()
 
-        line_marker = Marker()
-        line_marker.header.stamp = stamp
-        line_marker.header.frame_id = self._polygon_frame_id
-        line_marker.ns = "geofence_boundary"
-        line_marker.id = 0
-        line_marker.type = Marker.LINE_STRIP
-        line_marker.action = Marker.ADD
-        line_marker.pose.orientation.w = 1.0
-        line_marker.scale.x = 0.15
-        line_marker.color.a = 1.0
-        line_marker.color.r = 1.0
-        line_marker.color.g = 0.2
-        line_marker.color.b = 0.2
+        # Primary inclusion polygon
+        marker_array.markers.append(
+            self._make_polygon_line_marker(
+                points_xy=self._inclusion_polygon_xy,
+                stamp_msg=stamp,
+                marker_id=0,
+                ns="geofence_inclusion_boundary",
+                r=0.1,
+                g=0.9,  # greenish boundary
+                b=0.1,
+                line_width=0.15,
+            )
+        )
 
-        for x, y in self._closed_polygon_xy():
-            pt = Point()
-            pt.x = float(x)
-            pt.y = float(y)
-            pt.z = self._markers_offset_z
-            line_marker.points.append(pt)
+        marker_array.markers.append(
+            self._make_polygon_vertex_marker(
+                points_xy=self._inclusion_polygon_xy,
+                stamp_msg=stamp,
+                marker_id=1,
+                ns="geofence_inclusion_vertices",
+                r=1.0,
+                g=1.0,  # bright yellow vertices
+                b=0.2,
+                size=0.22,
+            )
+        )
 
-        marker_array.markers.append(line_marker)
+        # Exclusion polygons
+        for i, (_, polygon_xy) in enumerate(self._exclusion_polygons):
+            base_id = 100 + i * 2
 
-        vertex_marker = Marker()
-        vertex_marker.header.stamp = stamp
-        vertex_marker.header.frame_id = self._polygon_frame_id
-        vertex_marker.ns = "geofence_vertices"
-        vertex_marker.id = 1
-        vertex_marker.type = Marker.SPHERE_LIST
-        vertex_marker.action = Marker.ADD
-        vertex_marker.pose.orientation.w = 1.0
-        vertex_marker.scale.x = 0.25
-        vertex_marker.scale.y = 0.25
-        vertex_marker.scale.z = 0.25
-        vertex_marker.color.a = 1.0
-        vertex_marker.color.r = 1.0
-        vertex_marker.color.g = 1.0
-        vertex_marker.color.b = 0.2
+            marker_array.markers.append(
+                self._make_polygon_line_marker(
+                    points_xy=polygon_xy,
+                    stamp_msg=stamp,
+                    marker_id=base_id,
+                    ns="geofence_exclusion_boundary",
+                    r=0.9,
+                    g=0.1,  # reddish boundary
+                    b=0.1,
+                    line_width=0.12,
+                )
+            )
 
-        for x, y in self._inclusion_polygon_xy:
-            pt = Point()
-            pt.x = float(x)
-            pt.y = float(y)
-            pt.z = self._markers_offset_z
-            vertex_marker.points.append(pt)
+            marker_array.markers.append(
+                self._make_polygon_vertex_marker(
+                    points_xy=polygon_xy,
+                    stamp_msg=stamp,
+                    marker_id=base_id + 1,
+                    ns="geofence_exclusion_vertices",
+                    r=1.0,
+                    g=0.4,  # orange vertices
+                    b=0.2,
+                    size=0.18,
+                )
+            )
 
-        marker_array.markers.append(vertex_marker)
+        # Exclusion circles (approximated as polygons / line strips)
+        for i, circle in enumerate(self._exclusion_circles):
+            marker_array.markers.append(
+                self._make_circle_line_marker(
+                    center=circle.center,
+                    radius_m=circle.radius_m,
+                    stamp_msg=stamp,
+                    marker_id=300 + i,
+                    ns="geofence_exclusion_circles",
+                    r=0.9,
+                    g=0.1,  # reddish boundary
+                    b=0.1,
+                    line_width=0.10,
+                    num_segments=24,
+                )
+            )
+
+        # Breach return point
+        if self._breach_return_point is not None:
+            marker_array.markers.append(
+                self._make_breach_return_marker(
+                    stamp_msg=stamp,
+                    marker_id=500,
+                )
+            )
+
         self._marker_pub.publish(marker_array)
 
 
