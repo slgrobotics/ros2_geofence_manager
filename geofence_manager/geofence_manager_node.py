@@ -298,7 +298,7 @@ class GeofenceManagerNode(Node):
             raise ValueError("Primary inclusion polygon must contain at least 3 points.")
 
         self._source_name = geofence.source_name
-        self._polygon_frame_id = local_frame.frame_id if local_frame is not None else geofence.reference_frame
+        self._polygon_frame_id = local_frame.frame_id if local_frame is not None else self._world_frame
 
         self._inclusion_polygon_name = primary.zone_name
         self._inclusion_polygon_xy = list(primary.points)
@@ -436,7 +436,7 @@ class GeofenceManagerNode(Node):
     def _publish_boundary_aux_topics(self, ctx: BoundaryContext, stamp_msg) -> None:
         point_msg = PointStamped()
         point_msg.header.stamp = stamp_msg
-        point_msg.header.frame_id = self._world_frame
+        point_msg.header.frame_id = self._polygon_frame_id
         point_msg.point.x = float(ctx.closest_point[0])
         point_msg.point.y = float(ctx.closest_point[1])
         point_msg.point.z = self._markers_offset_z
@@ -447,22 +447,12 @@ class GeofenceManagerNode(Node):
         self._distance_to_boundary_pub.publish(dist_msg)
 
 
-    def _publish_dynamic_markers(self, ctx: BoundaryContext, stamp_msg) -> None:
-        marker_array = MarkerArray()
-
-        if self._publish_inward_normal_marker:
-            marker_array.markers.append(self._make_inward_normal_marker(ctx, stamp_msg))
-
-        if marker_array.markers:
-            self._marker_pub.publish(marker_array)
-
-
     def _delete_dynamic_markers(self, stamp_msg) -> None:
         marker_array = MarkerArray()
 
         marker = Marker()
         marker.header.stamp = stamp_msg
-        marker.header.frame_id = self._world_frame
+        marker.header.frame_id = self._polygon_frame_id
         marker.ns = "geofence_inward_normal"
         marker.id = 100
         marker.action = Marker.DELETE
@@ -474,7 +464,7 @@ class GeofenceManagerNode(Node):
     def _make_inward_normal_marker(self, ctx: BoundaryContext, stamp_msg) -> Marker:
         marker = Marker()
         marker.header.stamp = stamp_msg
-        marker.header.frame_id = self._world_frame
+        marker.header.frame_id = self._polygon_frame_id
         marker.ns = "geofence_inward_normal"
         marker.id = 100
         marker.type = Marker.ARROW
@@ -506,6 +496,16 @@ class GeofenceManagerNode(Node):
 
         marker.points = [start, end]
         return marker
+
+
+    def _publish_dynamic_markers(self, ctx: BoundaryContext, stamp_msg) -> None:
+        marker_array = MarkerArray()
+
+        if self._publish_inward_normal_marker:
+            marker_array.markers.append(self._make_inward_normal_marker(ctx, stamp_msg))
+
+        if marker_array.markers:
+            self._marker_pub.publish(marker_array)
 
 
     def _classify_state_with_hysteresis(self, inside: bool, distance_m: float) -> str:
@@ -609,7 +609,7 @@ class GeofenceManagerNode(Node):
             return response
 
         response.target_pose.header.stamp = self.get_clock().now().to_msg()
-        response.target_pose.header.frame_id = self._world_frame
+        response.target_pose.header.frame_id = self._polygon_frame_id
         response.target_pose.pose.position.x = float(result.target_point[0])
         response.target_pose.pose.position.y = float(result.target_point[1])
         response.target_pose.pose.position.z = 0.0
@@ -650,7 +650,7 @@ class GeofenceManagerNode(Node):
     ) -> Tuple[GeofenceStatus, Optional[BoundaryContext]]:
         msg = GeofenceStatus()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self._world_frame
+        msg.header.frame_id = self._polygon_frame_id
         msg.zone_name = self._inclusion_polygon_name
         msg.closest_boundary_point = Point()
         msg.distance_to_boundary_m = INVALID_DISTANCE_M
@@ -708,6 +708,9 @@ class GeofenceManagerNode(Node):
 
         ctx = self._compute_boundary_context(self._last_pose_x, self._last_pose_y)
 
+        allowed = self._pose_allowed_in_collection(self._last_pose_x, self._last_pose_y)
+        ctx.inside = allowed
+
         state = self._classify_state_with_hysteresis(ctx.inside, ctx.distance_m)
         self._stable_state = state
 
@@ -745,14 +748,13 @@ class GeofenceManagerNode(Node):
         x = float(pose.pose.position.x)
         y = float(pose.pose.position.y)
 
-        # Distance to the outer inclusion boundary is still useful even when exclusions exist.
         ctx = self._compute_boundary_context(x, y)
 
         inside_inclusion = point_in_polygon(x, y, self._inclusion_polygon_xy)
         inside_exclusion_polygon = self._point_inside_any_exclusion_polygon(x, y)
         inside_exclusion_circle = self._point_inside_any_exclusion_circle(x, y)
 
-        allowed = inside_inclusion and not inside_exclusion_polygon and not inside_exclusion_circle
+        allowed = self._pose_allowed_in_collection(x, y)
 
         response.allowed = allowed
         response.distance_to_boundary_m = float(ctx.distance_m)
@@ -772,7 +774,7 @@ class GeofenceManagerNode(Node):
     def _publish_polygon_msg(self) -> None:
         msg = PolygonStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = self._world_frame
+        msg.header.frame_id = self._polygon_frame_id
 
         for x, y in self._closed_polygon_xy():
             pt = Point32()
@@ -790,7 +792,7 @@ class GeofenceManagerNode(Node):
 
         line_marker = Marker()
         line_marker.header.stamp = stamp
-        line_marker.header.frame_id = self._world_frame
+        line_marker.header.frame_id = self._polygon_frame_id
         line_marker.ns = "geofence_boundary"
         line_marker.id = 0
         line_marker.type = Marker.LINE_STRIP
@@ -813,7 +815,7 @@ class GeofenceManagerNode(Node):
 
         vertex_marker = Marker()
         vertex_marker.header.stamp = stamp
-        vertex_marker.header.frame_id = self._world_frame
+        vertex_marker.header.frame_id = self._polygon_frame_id
         vertex_marker.ns = "geofence_vertices"
         vertex_marker.id = 1
         vertex_marker.type = Marker.SPHERE_LIST
@@ -875,7 +877,7 @@ def main(args: Optional[Sequence[str]] = None) -> None:
             print("Ctrl+C received, shutting down geofence_manager.")
     except Exception:
         if node is not None:
-            node.get_logger().exception("Unhandled exception in geofence_manager.")
+            node.get_logger().error("Unhandled exception in geofence_manager.", exc_info=True)
         raise
     finally:
         if node is not None:

@@ -10,11 +10,18 @@ EARTH_RADIUS_M = 6378137.0
 
 
 @dataclass
+class LocalFrameDefinition:
+    origin_lat_deg: float
+    origin_lon_deg: float
+    frame_id: str = "map"  # e.g. "map" or "odom", to let ROS know which frame the object is running in. Not the original "reference_frame"
+
+
+@dataclass
 class GeofenceZonePolygon:
     zone_name: str
     points: List[Point2D]
     inclusion: bool
-    reference_frame: str = "local_cartesian"  # e.g. "local_cartesian" or "wgs84", to keep track of the frame the polygon is defined in
+    reference_frame: str = "local_cartesian"  # e.g. "local_cartesian" or "wgs84", to keep track of the frame the object was defined in. Not "frame_id"
 
 
 @dataclass
@@ -40,20 +47,6 @@ class GeofenceCollection:
     polygons: List[GeofenceZonePolygon] = field(default_factory=list)
     circles: List[GeofenceZoneCircle] = field(default_factory=list)
     breach_return: Optional[BreachReturnPoint] = None
-
-
-# @dataclass
-# class GeofenceDefinition:
-#     zone_name: str
-#     points: List[Point2D]
-#     reference_frame: str = "local_cartesian"  # e.g. "local_cartesian" or "wgs84", to keep track of the frame the polygon is defined in
-
-
-@dataclass
-class LocalFrameDefinition:
-    origin_lat_deg: float
-    origin_lon_deg: float
-    frame_id: str = "map"  # e.g. "map" or "odom", to keep track of the frame the local polygon is defined in
 
 
 @dataclass
