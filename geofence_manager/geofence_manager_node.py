@@ -215,6 +215,9 @@ class GeofenceManagerNode(Node):
         self._raw_outside_count: int = 0
         self._raw_inside_count: int = 0
 
+        # Delete any existing latched markers on startup to prevent stale visualization in RViz until the first status is published.
+        self._delete_all_markers(self.get_clock().now().to_msg())
+
         self.get_logger().info(
             f"geofence_manager started | file='{self._geofence_file}'\n"
             f"source='{self._source_name}' | primary_inclusion='{self._inclusion_polygon_name}' | "
@@ -593,8 +596,6 @@ class GeofenceManagerNode(Node):
         return marker
 
 
-
-
     def _delete_dynamic_markers(self, stamp_msg) -> None:
         marker_array = MarkerArray()
 
@@ -604,6 +605,21 @@ class GeofenceManagerNode(Node):
         marker.ns = "geofence_inward_normal"
         marker.id = 100
         marker.action = Marker.DELETE
+
+        marker_array.markers.append(marker)
+        self._marker_pub.publish(marker_array)
+
+
+    def _delete_all_markers(self, stamp_msg) -> None:
+        #
+        # wipes everything under /geofence/markers in one shot.
+        #
+        marker_array = MarkerArray()
+
+        marker = Marker()
+        marker.header.stamp = stamp_msg
+        marker.header.frame_id = self._polygon_frame_id
+        marker.action = Marker.DELETEALL
 
         marker_array.markers.append(marker)
         self._marker_pub.publish(marker_array)
@@ -1041,6 +1057,11 @@ class GeofenceManagerNode(Node):
 
 
     def destroy_node(self) -> bool:
+        try:
+            self._delete_all_markers(self.get_clock().now().to_msg())
+        except Exception:
+            pass
+
         if hasattr(self, "_status_timer"):
             self._status_timer.cancel()
         if hasattr(self, "_static_timer"):
