@@ -35,6 +35,7 @@ from geofence_manager.helpers.geofence_loader import load_geofence_as_local_cart
 #      using QGroundControl .plan files with WGS84 lat/lon input:
 # ./test_bounce_excl.py --file ../plans/geofence_qgroundcontrol.plan --x 33.19983710 --y -86.29979086
 # ./test_bounce_excl.py --file ../plans/geofence_qgroundcontrol_multi.plan --x 33.19983710 --y -86.29979086 --zone-name polygon_1
+# ./test_bounce_excl.py --file ../plans/geofence_qgroundcontrol_multi2.plan
 #
 
 
