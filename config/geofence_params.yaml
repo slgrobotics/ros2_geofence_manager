@@ -1,10 +1,12 @@
 geofence_manager:
   ros__parameters:
-    pose_topic: "/odometry/global"
+    #pose_topic: "/odometry/global"
+    pose_topic: "/odometry/local"
     pose_source_type: "odometry"       # pose_stamped | odometry
     #pose_topic: "/robot_pose"
     #pose_source_type: "pose_stamped"   # pose_stamped | odometry
-    world_frame: "map"
+    #world_frame: "map"
+    world_frame: "odom"
     near_boundary_threshold_m: 1.0
     near_boundary_hysteresis_m: 0.5
     outside_debounce_count: 3
